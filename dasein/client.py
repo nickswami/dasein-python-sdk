@@ -80,14 +80,14 @@ class Client:
                 if resp.status_code == 429:
                     retry_after = float(resp.headers.get("Retry-After", "1"))
                     if attempt < self.max_retries:
-                        time.sleep(retry_after)
+                        time.sleep(max(retry_after, 2 ** attempt))
                         continue
                     raise DaseinRateLimitError("Rate limit exceeded", retry_after=retry_after)
 
                 if resp.status_code == 503:
                     retry_after = float(resp.headers.get("Retry-After", "1"))
                     if attempt < self.max_retries:
-                        time.sleep(min(retry_after, 2 ** attempt))
+                        time.sleep(max(retry_after, 2 ** attempt))
                         continue
                     raise DaseinUnavailableError("Service unavailable", retry_after=retry_after)
 

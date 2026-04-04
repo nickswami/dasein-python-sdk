@@ -21,8 +21,6 @@ class QueryResult:
     score: float
     text: str | None = None
     metadata: dict[str, Any] | None = None
-    dense_score: float | None = None
-    sparse_score: float | None = None
 
 
 @dataclass

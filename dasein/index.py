@@ -7,7 +7,7 @@ import time
 from typing import TYPE_CHECKING, Any, Optional
 
 from dasein.types import QueryResult, IndexInfo, UpsertItem
-from dasein.exceptions import DaseinError, DaseinUnavailableError
+from dasein.exceptions import DaseinError, DaseinBuildError, DaseinUnavailableError
 
 if TYPE_CHECKING:
     from dasein.client import Client
@@ -88,8 +88,9 @@ class Index:
     def upsert_and_wait(self, documents: list[dict | UpsertItem],
                         timeout: float = 120.0) -> dict:
         """
-        Upsert documents and wait for the index to become active.
-        Useful for initial loads with auto-build.
+        Upsert documents and wait for the index to become queryable (active)
+        or fully built (built). If the index reaches 'built' but not 'active',
+        the user likely needs to activate a subscription first.
         """
         result = self.upsert(documents)
 
@@ -98,11 +99,15 @@ class Index:
             info = self.status()
             if info.status == "active":
                 return result
+            if info.status == "built":
+                result["index_status"] = "built"
+                result["message"] = "Index built successfully. Activate a subscription to make it queryable."
+                return result
             if info.status in ("build_failed",):
-                raise DaseinError(f"Build failed for index {self.index_id}")
+                raise DaseinBuildError(f"Build failed for index {self.index_id}")
             time.sleep(2)
 
-        raise DaseinUnavailableError(f"Index {self.index_id} did not become active within {timeout}s")
+        raise DaseinUnavailableError(f"Index {self.index_id} did not finish building within {timeout}s")
 
     def query(
         self,
@@ -151,11 +156,9 @@ class Index:
         return [
             QueryResult(
                 id=r["id"],
-                score=r["score"],
+                score=r.get("score", 0.0),
                 text=r.get("text"),
                 metadata=r.get("metadata"),
-                dense_score=r.get("dense_score"),
-                sparse_score=r.get("sparse_score"),
             )
             for r in data.get("results", [])
         ]
@@ -163,9 +166,9 @@ class Index:
     def delete(self, ids: list[str | int]) -> dict:
         """Delete documents by ID."""
         resp = self._client._request(
-            "DELETE",
-            f"/indexes/{self.index_id}/documents",
-            params={"ids": ids},
+            "POST",
+            f"/indexes/{self.index_id}/delete-documents",
+            json={"ids": ids},
         )
         return resp.json()
 
