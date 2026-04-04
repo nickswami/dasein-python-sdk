@@ -89,8 +89,7 @@ class Index:
                         timeout: float = 120.0) -> dict:
         """
         Upsert documents and wait for the index to become queryable (active)
-        or fully built (built). If the index reaches 'built' but not 'active',
-        the user likely needs to activate a subscription first.
+        or fully built (built). Detects requires_build and guides the user.
         """
         result = self.upsert(documents)
 
@@ -103,7 +102,14 @@ class Index:
                 result["index_status"] = "built"
                 result["message"] = "Index built successfully. Activate a subscription to make it queryable."
                 return result
-            if info.status in ("build_failed",):
+            if info.status == "requires_build":
+                result["index_status"] = "requires_build"
+                result["message"] = (
+                    "Index has data but needs an explicit build (BYOV with unknown model). "
+                    "Call index.build() to start the build."
+                )
+                return result
+            if info.status == "build_failed":
                 raise DaseinBuildError(f"Build failed for index {self.index_id}")
             time.sleep(2)
 

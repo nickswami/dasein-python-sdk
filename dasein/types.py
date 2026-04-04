@@ -25,7 +25,7 @@ class QueryResult:
 
 @dataclass
 class IndexInfo:
-    """Index metadata."""
+    """Index metadata. Tolerates extra keys from API for forward compat."""
     index_id: str
     status: str
     plan: str | None = None
@@ -33,3 +33,8 @@ class IndexInfo:
     model_id: str | None = None
     has_text: bool = False
     dim: int = 1024
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "IndexInfo":
+        known = {f.name for f in cls.__dataclass_fields__.values()}
+        return cls(**{k: v for k, v in data.items() if k in known})
