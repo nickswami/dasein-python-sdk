@@ -114,8 +114,9 @@ class Index:
         text: str | None = None,
         vector: list[float] | None = None,
         top_k: int = 10,
-        mode: str | None = None,
+        mode: str = "dense",
         filter: dict[str, str] | None = None,
+        exact_rescore: bool = False,
     ) -> list[QueryResult]:
         """
         Query the index.
@@ -126,8 +127,9 @@ class Index:
             text: Query text (requires model to be set on the index)
             vector: Query vector (list of floats)
             top_k: Number of results to return
-            mode: "dense" or "hybrid" (defaults to index plan)
+            mode: "dense" or "hybrid"
             filter: Metadata filter dict, e.g. {"tenant": "acme"}
+            exact_rescore: If True and mode is hybrid, use exact BM25 rescore
 
         Returns:
             List of QueryResult objects
@@ -135,17 +137,15 @@ class Index:
         if text is None and vector is None:
             raise ValueError("Either text or vector must be provided")
 
-        payload: dict[str, Any] = {"top_k": top_k}
+        payload: dict[str, Any] = {"top_k": top_k, "mode": mode}
         if text is not None:
             payload["text"] = text
         if vector is not None:
             payload["vector"] = vector
-        if mode is not None:
-            payload["mode"] = mode
-        else:
-            payload["mode"] = self.plan
         if filter is not None:
             payload["filter"] = filter
+        if exact_rescore:
+            payload["exact_rescore"] = True
 
         resp = self._client._request(
             "POST",
@@ -166,8 +166,8 @@ class Index:
     def delete(self, ids: list[str | int]) -> dict:
         """Delete documents by ID."""
         resp = self._client._request(
-            "POST",
-            f"/indexes/{self.index_id}/delete-documents",
+            "DELETE",
+            f"/indexes/{self.index_id}/documents",
             json={"ids": ids},
         )
         return resp.json()
