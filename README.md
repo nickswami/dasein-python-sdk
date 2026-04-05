@@ -50,11 +50,17 @@ results = index.query("financial derivatives risk models", top_k=10, mode="dense
 # Hybrid: semantic + BM25 keyword matching, fused and re-ranked
 results = index.query("AAPL earnings Q3 2025", top_k=10, mode="hybrid")
 
-# Hybrid with exact keyword matching for maximum precision
+# Exact keyword matching — only docs that contain all your terms
 results = index.query("AAPL earnings Q3 2025", top_k=10, mode="hybrid", exact=True)
+
+# Phrase matching — only docs containing "machine learning" as an exact phrase
+results = index.query("machine learning", top_k=10, mode="hybrid", phrase=True)
+
+# Fuzzy matching — handles typos (edit distance 1)
+results = index.query("machin lerning", top_k=10, mode="hybrid", fuzzy=True)
 ```
 
-Hybrid mode is strongest on queries with specific keywords, entity names, or codes where pure semantic search loses signal. Dense mode is better for abstract, conceptual queries. You choose per query.
+Hybrid mode is strongest on queries with specific keywords, entity names, or codes where pure semantic search loses signal. Dense mode is better for abstract, conceptual queries. You choose per query. The keyword features (`exact`, `phrase`, `fuzzy`) refine hybrid results — use them when you need precise keyword control.
 
 ## Get an API Key
 
@@ -159,6 +165,8 @@ results = index.query(
     mode="dense",              # "dense" or "hybrid"
     filter={"key": "value"},   # optional metadata filter
     exact=False,               # exact keyword matching (hybrid only)
+    phrase=False,              # exact phrase matching (hybrid only)
+    fuzzy=False,               # typo-tolerant matching (hybrid only)
 )
 
 for r in results:

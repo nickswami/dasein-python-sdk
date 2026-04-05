@@ -138,6 +138,8 @@ class Index:
         mode: str = "dense",
         filter: dict[str, str] | None = None,
         exact: bool = False,
+        phrase: bool = False,
+        fuzzy: bool = False,
     ) -> list[QueryResult]:
         """
         Query the index.
@@ -150,7 +152,9 @@ class Index:
             top_k: Number of results to return
             mode: "dense" or "hybrid"
             filter: Metadata filter dict, e.g. {"tenant": "acme"}
-            exact: Use exact keyword matching in hybrid mode
+            exact: Exact keyword matching -- only return docs containing all query terms
+            phrase: Phrase matching -- only return docs containing the query as an exact phrase
+            fuzzy: Fuzzy matching -- match keywords with typo tolerance (edit distance 1)
 
         Returns:
             List of QueryResult objects
@@ -167,6 +171,10 @@ class Index:
             payload["filter"] = filter
         if exact:
             payload["exact"] = True
+        if phrase:
+            payload["phrase"] = True
+        if fuzzy:
+            payload["fuzzy"] = True
 
         resp = self._client._request(
             "POST",
