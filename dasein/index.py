@@ -52,6 +52,9 @@ class Index:
         Returns:
             {"status": "ok", "count": N, "total": M}
         """
+        if not documents:
+            return {"status": "ok", "count": 0, "total": 0}
+
         docs = []
         for d in documents:
             if isinstance(d, UpsertItem):
