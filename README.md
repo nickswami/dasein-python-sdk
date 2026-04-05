@@ -67,7 +67,26 @@ Hybrid mode is strongest on queries with specific keywords, entity names, or cod
 
 ## Get an API Key
 
-Sign up with GitHub at [daseinai.ai](https://daseinai.ai) — no credit card required.
+**Web:** Sign up with GitHub at [daseinai.ai/auth](https://dasein-api-939340394421.us-central1.run.app/auth/github) — no credit card required. You'll get an API key instantly.
+
+**CLI / Agents:**
+
+```python
+import httpx, time
+
+resp = httpx.post("https://dasein-api-939340394421.us-central1.run.app/auth/device/start").json()
+print(f"Go to {resp['verification_uri']} and enter code: {resp['user_code']}")
+
+while True:
+    time.sleep(resp.get("interval", 5))
+    poll = httpx.post(
+        "https://dasein-api-939340394421.us-central1.run.app/auth/device/poll",
+        json={"device_code": resp["device_code"]},
+    ).json()
+    if poll.get("api_key"):
+        print(f"API key: {poll['api_key']}")
+        break
+```
 
 ## Features
 
