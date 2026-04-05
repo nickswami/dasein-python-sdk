@@ -2,7 +2,7 @@
 
 Python SDK for the [Dasein](https://daseinai.ai) managed vector index service.
 
-Dasein delivers up to 1M vectors at $10/month (dense) and $15/month (hybrid) with low latency, high recall, and zero configuration. Bring your own vectors or let us embed your text with open-source models.
+Low-latency vector search with hybrid retrieval as a one-line toggle. Send raw text and get back ranked results — Dasein handles embedding, indexing, and serving.
 
 ## Install
 
@@ -17,40 +17,58 @@ from dasein import Client
 
 client = Client(api_key="dsk_...")
 
-# Create an index with automatic embedding
+# Create an index — we embed your text automatically
 index = client.create_index("my-docs", model="bge-large-en-v1.5")
 
-# Upsert documents — we handle embedding
+# Upsert documents
 index.upsert([
     {"id": "doc1", "text": "Machine learning is a subset of AI", "metadata": {"topic": "ai"}},
     {"id": "doc2", "text": "Python is great for data science", "metadata": {"topic": "code"}},
     {"id": "doc3", "text": "The stock market rallied today", "metadata": {"topic": "finance"}},
 ])
 
-# Query with text
+# Dense search
 results = index.query("what is machine learning?", top_k=5)
+
+# Flip to hybrid — combines dense vectors with BM25 in a single call
+results = index.query("what is machine learning?", top_k=5, mode="hybrid")
+
 for r in results:
     print(f"{r.id}: {r.score:.4f} — {r.text}")
-
-# Filter by metadata
-results = index.query("programming", top_k=5, filter={"topic": "code"})
 ```
+
+## Hybrid Search
+
+Toggle between dense-only and hybrid retrieval per query — no config changes, no reindexing, no separate BM25 pipeline.
+
+```python
+# Dense: pure semantic similarity
+results = index.query("financial derivatives risk models", top_k=10, mode="dense")
+
+# Hybrid: semantic + BM25 keyword matching, fused and re-ranked
+results = index.query("AAPL earnings Q3 2025", top_k=10, mode="hybrid")
+
+# Hybrid with exact BM25 rescore for maximum precision
+results = index.query("AAPL earnings Q3 2025", top_k=10, mode="hybrid", exact_rescore=True)
+```
+
+Hybrid mode is strongest on queries with specific keywords, entity names, or codes where pure semantic search loses signal. Dense mode is better for abstract, conceptual queries. You choose per query.
 
 ## Get an API Key
 
-Sign up with GitHub at [daseinai.ai](https://daseinai.ai) — no credit card required. Your free trial includes 1 index, 100K vectors, and 1M embedding tokens.
+Sign up with GitHub at [daseinai.ai](https://daseinai.ai) — no credit card required.
 
 ## Features
 
-**Managed embedding** — Pass raw text, we embed it with open-source models (BGE, Nomic, E5, GTE). No embedding infrastructure to manage.
+**Managed embedding** — Pass raw text, we embed with open-source models (BGE, Nomic, E5, GTE). No embedding infrastructure to manage.
 
-**Bring your own vectors** — Already have embeddings? Pass them directly.
+**Bring your own vectors** — Already have embeddings? Pass them directly with any dimension.
 
-**Metadata filtering** — Attach key-value metadata to documents and filter at query time. Up to 1,000 unique filter values per index.
+**Hybrid search as a toggle** — Switch between dense and hybrid retrieval per query. No reindexing, no separate BM25 infrastructure.
 
-**Hybrid search** — Combine dense vector search with BM25 for better retrieval on keyword-heavy queries. Opt-in per query with `mode="hybrid"`.
+**Metadata filtering** — Attach key-value metadata to documents and filter at query time.
 
-**Automatic retries** — The SDK retries on 429 (rate limit) and 503 (temporarily unavailable) with exponential backoff.
+**Automatic retries** — The SDK retries on 429 and 503 with exponential backoff.
 
 ## Embedding Models
 
@@ -132,7 +150,7 @@ index.delete(["doc1", "doc2"])
 index.build()
 ```
 
-Only needed if you're using bring-your-own-vectors with a model we don't recognize. Indexes with a known model build automatically after the first upsert.
+Only needed for bring-your-own-vectors with unrecognized models. Known-model indexes build automatically after the first upsert.
 
 ### Index Status
 
@@ -154,14 +172,6 @@ from dasein.exceptions import (
     DaseinBuildError,        # build failed
 )
 ```
-
-## Pricing
-
-| Plan | Price | Includes |
-|------|-------|----------|
-| Free trial | $0 for 7 days | 1 index, 100K vectors, 1M embedding tokens/month |
-| Dense | $10/month | 3 indexes, 1M vectors, 50M embedding tokens/month |
-| Hybrid | $15/month | 3 indexes, 1M vectors, 50M embedding tokens/month, BM25 + dense fusion |
 
 ## License
 
