@@ -15,15 +15,15 @@ index.upsert([
     {"id": "doc3", "text": "PostgreSQL supports full text search natively", "metadata": {"tenant": "globex", "type": "docs"}},
 ])
 
-results = index.query("what is machine learning?", top_k=5)
+results = index.query("what is machine learning?", top_k=5, include_text=True)
 for r in results:
     print(f"  {r.id}: {r.score:.4f} - {r.text}")
 
 results = index.query("machine learning", top_k=5, filter={"tenant": "acme"})
 for r in results:
-    print(f"  {r.id}: {r.score:.4f} - {r.text} [{r.metadata}]")
+    print(f"  {r.id}: {r.score:.4f} [{r.metadata}]")
 
-results = index.query(vector=[0.12, -0.03, 0.45] + [0.0] * 1021, top_k=3)
+results = index.query(vector=[0.12, -0.03, 0.45] + [0.0] * 1021, top_k=3, include_metadata=False)
 for r in results:
     print(f"  {r.id}: {r.score:.4f}")
 

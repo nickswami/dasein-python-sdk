@@ -101,7 +101,7 @@ while True:
 
 **Metadata filtering** — Attach key-value metadata to documents and filter at query time.
 
-**Automatic retries** — The SDK retries on 429 and 503 with exponential backoff.
+**Automatic retries** — The SDK retries on 429 with exponential backoff. Read-only operations (queries, GETs) also retry on 503/504. Write operations (upsert, build, delete) do *not* retry on 503 to avoid duplicating side effects.
 
 ## Embedding Models
 
@@ -269,6 +269,7 @@ print(info.vector_count)
 from dasein.exceptions import (
     DaseinError,             # base exception
     DaseinAuthError,         # 401/403 — bad or missing API key
+    DaseinQuotaError,        # 403 — plan/trial limit reached (upgrade required)
     DaseinNotFoundError,     # 404 — index doesn't exist
     DaseinRateLimitError,    # 429 — rate limit exceeded (has retry_after)
     DaseinUnavailableError,  # 503 — service temporarily unavailable (has retry_after)

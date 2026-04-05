@@ -69,7 +69,10 @@ class Index:
         MAX_BATCH = 100
         results = []
         any_staged = False
+        n_batches = (len(docs) + MAX_BATCH - 1) // MAX_BATCH
         for i in range(0, len(docs), MAX_BATCH):
+            if i > 0 and n_batches > 1:
+                time.sleep(0.15)
             batch = docs[i:i + MAX_BATCH]
             resp = self._client._request(
                 "POST",

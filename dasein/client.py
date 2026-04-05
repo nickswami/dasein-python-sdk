@@ -71,8 +71,24 @@ class Client:
         except Exception:
             return resp.text or f"HTTP {resp.status_code}"
 
+    _IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "DELETE"})
+    _SAFE_TO_RETRY_PATHS = frozenset({"/query"})
+
+    def _is_safe_retry(self, method: str, path: str) -> bool:
+        """503/504/connection retries are only safe for idempotent methods or read-only POSTs like query."""
+        if method.upper() in self._IDEMPOTENT_METHODS:
+            return True
+        return any(path.endswith(s) for s in self._SAFE_TO_RETRY_PATHS)
+
     def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
-        """Make an HTTP request with retry logic for 429/503."""
+        """Make an HTTP request with retry logic for 429/503.
+
+        429 is always retried (request was rejected, not processed).
+        503/504 and connection errors are only retried for idempotent
+        methods or known-safe read paths (e.g., /query) to avoid
+        duplicating side effects on upsert/build/delete.
+        """
+        safe_retry = self._is_safe_retry(method, path)
         last_error = None
         for attempt in range(self.max_retries + 1):
             try:
@@ -96,9 +112,9 @@ class Client:
                         continue
                     raise DaseinRateLimitError("Rate limit exceeded", retry_after=retry_after)
 
-                if resp.status_code == 503 or resp.status_code == 504:
+                if resp.status_code in (503, 504):
                     retry_after = float(resp.headers.get("Retry-After", "1"))
-                    if attempt < self.max_retries:
+                    if safe_retry and attempt < self.max_retries:
                         time.sleep(max(retry_after, 2 ** attempt))
                         continue
                     raise DaseinUnavailableError(
@@ -111,7 +127,7 @@ class Client:
 
             except (httpx.ConnectError, httpx.TimeoutException) as e:
                 last_error = e
-                if attempt < self.max_retries:
+                if safe_retry and attempt < self.max_retries:
                     time.sleep(2 ** attempt)
                     continue
                 raise DaseinUnavailableError(f"Connection failed: {e}")
@@ -145,7 +161,7 @@ class Client:
             client=self,
             index_id=data["index_id"],
             model_id=model,
-            plan=plan,
+            plan=data.get("plan", plan),
             dim=data.get("dim", 1024),
         )
 
