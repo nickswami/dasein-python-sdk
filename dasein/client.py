@@ -110,7 +110,10 @@ class Client:
                     if attempt < self.max_retries:
                         time.sleep(max(retry_after, 2 ** attempt))
                         continue
-                    raise DaseinRateLimitError("Rate limit exceeded", retry_after=retry_after)
+                    raise DaseinRateLimitError(
+                        self._extract_detail(resp) or "Rate limit exceeded",
+                        retry_after=retry_after,
+                    )
 
                 if resp.status_code in (503, 504):
                     retry_after = float(resp.headers.get("Retry-After", "1"))
