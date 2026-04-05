@@ -63,6 +63,13 @@ class Client:
             timeout=timeout,
         )
 
+    @staticmethod
+    def _extract_detail(resp: httpx.Response) -> str:
+        try:
+            return resp.json().get("detail", resp.text)
+        except Exception:
+            return resp.text or f"HTTP {resp.status_code}"
+
     def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
         """Make an HTTP request with retry logic for 429/503."""
         last_error = None
@@ -71,11 +78,11 @@ class Client:
                 resp = self._client.request(method, path, **kwargs)
 
                 if resp.status_code == 401:
-                    raise DaseinAuthError("Invalid API key")
+                    raise DaseinAuthError(self._extract_detail(resp))
                 if resp.status_code == 403:
-                    raise DaseinAuthError("Forbidden")
+                    raise DaseinAuthError(self._extract_detail(resp))
                 if resp.status_code == 404:
-                    raise DaseinNotFoundError(resp.json().get("detail", "Not found"))
+                    raise DaseinNotFoundError(self._extract_detail(resp))
 
                 if resp.status_code == 429:
                     retry_after = float(resp.headers.get("Retry-After", "1"))
@@ -84,17 +91,18 @@ class Client:
                         continue
                     raise DaseinRateLimitError("Rate limit exceeded", retry_after=retry_after)
 
-                if resp.status_code == 503:
+                if resp.status_code == 503 or resp.status_code == 504:
                     retry_after = float(resp.headers.get("Retry-After", "1"))
                     if attempt < self.max_retries:
                         time.sleep(max(retry_after, 2 ** attempt))
                         continue
-                    raise DaseinUnavailableError("Service unavailable", retry_after=retry_after)
+                    raise DaseinUnavailableError(
+                        self._extract_detail(resp), retry_after=retry_after)
 
                 if resp.status_code < 300:
                     return resp
-                resp.raise_for_status()
-                return resp
+
+                raise DaseinError(self._extract_detail(resp))
 
             except (httpx.ConnectError, httpx.TimeoutException) as e:
                 last_error = e

@@ -29,14 +29,17 @@ index.upsert([
     {"id": "doc3", "text": "The stock market rallied today", "metadata": {"topic": "finance"}},
 ])
 
-# Dense search
+# Dense search — returns id, score, metadata (all from RAM, no SSD)
 results = index.query("what is machine learning?", top_k=5)
 
 # Flip to hybrid — combines dense vectors with BM25 in a single call
 results = index.query("what is machine learning?", top_k=5, mode="hybrid")
 
+# Need the original text back? Opt in (adds SSD read per result)
+results = index.query("what is machine learning?", top_k=5, include_text=True)
+
 for r in results:
-    print(f"{r.id}: {r.score:.4f}")
+    print(f"{r.id}: {r.score:.4f} — {r.metadata}")
 ```
 
 ## Hybrid Search
@@ -190,18 +193,37 @@ results = index.query(
     phrase=False,                # exact phrase matching (hybrid only)
     fuzzy=False,                 # typo-tolerant matching (hybrid only)
     alpha=0.5,                   # dense vs BM25 balance (0=dense, 1=BM25)
-    include_text=False,          # return stored text (SSD read, off by default)
-    include_metadata=True,       # return stored metadata (SSD read, on by default)
+    include_text=False,          # return stored text (off by default)
+    include_metadata=True,       # return stored metadata (on by default)
 )
-
-for r in results:
-    print(r.id, r.score, r.metadata)
 ```
 
-By default, queries return `id`, `score`, and `metadata` — but **not** the original text.
-This keeps the hot path fast (RAM-only for dense, RAM-only for default hybrid).
-Set `include_text=True` when you need the original text back.
-Set `include_metadata=False` for maximum QPS when you only need IDs and scores.
+**What you get back** depends on your settings:
+
+| Setting | Returns | I/O cost |
+|---------|---------|----------|
+| Default | `id`, `score`, `metadata` | RAM only (dense) or RAM only (hybrid) |
+| `include_text=True` | + `text` | Adds SSD read per result |
+| `include_metadata=False` | `id`, `score` only | Fastest — pure RAM, zero SSD |
+
+```python
+# Maximum QPS — IDs and scores only, pure RAM
+results = index.query("quarterly earnings", top_k=10, include_metadata=False)
+for r in results:
+    print(r.id, r.score)
+
+# Standard — IDs, scores, and metadata (default)
+results = index.query("quarterly earnings", top_k=10)
+for r in results:
+    print(r.id, r.score, r.metadata)
+
+# Full hydration — include original text
+results = index.query("quarterly earnings", top_k=10, include_text=True)
+for r in results:
+    print(r.id, r.score, r.text, r.metadata)
+```
+
+Text is stored on SSD and only fetched when you ask for it. This means the default dense and hybrid search paths are entirely RAM-resident — no disk I/O in the query hot path.
 
 ### Delete Documents
 
