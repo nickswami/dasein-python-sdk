@@ -114,9 +114,15 @@ class Client:
                         "subscription", "past due", "expired", "subscribe",
                         "payment", "reactivate",
                     )
+                    _AUTH_KEYWORDS = (
+                        "api key", "api_key", "credential", "revoked",
+                        "invalid key", "missing key", "authentication",
+                    )
                     if any(kw in detail_lower for kw in _QUOTA_KEYWORDS):
                         raise DaseinQuotaError(detail)
-                    raise DaseinAuthError(detail)
+                    if any(kw in detail_lower for kw in _AUTH_KEYWORDS):
+                        raise DaseinAuthError(detail)
+                    raise DaseinError(detail)
                 if resp.status_code == 404:
                     raise DaseinNotFoundError(self._extract_detail(resp))
 
@@ -187,6 +193,7 @@ class Client:
             model_id=model,
             plan=data.get("plan", plan),
             dim=data.get("dim", 1024),
+            max_vectors=data.get("max_vectors"),
         )
 
     def list_indexes(self) -> list[dict]:
@@ -204,6 +211,7 @@ class Client:
             model_id=data.get("model_id"),
             plan=data.get("plan", "dense"),
             dim=data.get("dim", 1024),
+            max_vectors=data.get("max_vectors"),
         )
 
     def index_info(self, index_id: str) -> IndexInfo:

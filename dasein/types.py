@@ -33,6 +33,7 @@ class IndexInfo:
     model_id: str | None = None
     has_text: bool = False
     dim: int = 1024
+    max_vectors: int | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "IndexInfo":

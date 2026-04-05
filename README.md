@@ -103,11 +103,12 @@ while True:
 
 **Automatic retries** — The SDK retries with exponential backoff:
 
-| Error | Read / query | Upsert / build / delete |
-|-------|-------------|------------------------|
-| 429 (rate limit) | Retried (up to `max_retries`) | Retried (up to `max_retries`) |
-| 503/504 (transient) | Retried | **Not retried** — to avoid duplicate side effects |
-| Connection error | Retried | **Not retried** |
+| Error | Read / query | Upsert | Build / delete |
+|-------|-------------|--------|----------------|
+| 429 (rate limit) | Retried (up to `max_retries`) | Retried | Retried |
+| 503 (transient) | Retried | Not retried | Not retried |
+| 504 (gateway timeout) | Retried | Retried (upserts are idempotent by doc ID) | Not retried |
+| Connection error | Retried | Not retried | Not retried |
 
 ## Embedding Models
 
@@ -284,9 +285,9 @@ print(info.vector_count)
 
 ```python
 from dasein.exceptions import (
-    DaseinError,             # base exception
-    DaseinAuthError,         # 401 or 403 — bad/missing API key or forbidden
-    DaseinQuotaError,        # 403 — billing/plan/trial/subscription limit
+    DaseinError,             # base — catch-all for any Dasein error, including plain 403 Forbidden
+    DaseinAuthError,         # 401, or 403 mentioning credentials / API key / revoked
+    DaseinQuotaError,        # 403 — billing/plan/trial/subscription/embed limit
     DaseinNotFoundError,     # 404 — index doesn't exist
     DaseinRateLimitError,    # 429 — rate limit or embed quota exceeded (has retry_after)
     DaseinUnavailableError,  # 503/504 — service temporarily unavailable (has retry_after)
@@ -294,7 +295,7 @@ from dasein.exceptions import (
 )
 ```
 
-`DaseinQuotaError` covers: trial limits, plan vector caps, expired/past-due subscriptions, embed token quotas, and any 403 indicating a billing or plan constraint. `DaseinAuthError` is only raised for credential issues (bad API key, revoked key).
+`DaseinAuthError` is raised only for credential issues (bad API key, revoked key, authentication failure). `DaseinQuotaError` covers trial limits, plan vector caps, expired/past-due subscriptions, and embed token quotas. A generic 403 (e.g., accessing a resource you don't own) raises `DaseinError` — catch it separately if you need to distinguish resource authorization from credential errors.
 
 ## License
 

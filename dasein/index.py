@@ -27,12 +27,14 @@ class Index:
         model_id: str | None = None,
         plan: str = "dense",
         dim: int = 1024,
+        max_vectors: int | None = None,
     ):
         self._client = client
         self.index_id = index_id
         self.model_id = model_id
         self.plan = plan
         self.dim = dim
+        self.max_vectors = max_vectors
 
     def upsert(self, documents: list[dict | UpsertItem]) -> dict:
         """
@@ -224,13 +226,29 @@ class Index:
         ]
 
     def delete(self, ids: list[str | int]) -> dict:
-        """Delete documents by ID."""
-        resp = self._client._request(
-            "DELETE",
-            f"/indexes/{self.index_id}/documents",
-            json={"ids": ids},
-        )
-        return resp.json()
+        """Delete documents by ID. Automatically batches if more than 1000 IDs."""
+        _BATCH = 1000
+        if len(ids) <= _BATCH:
+            resp = self._client._request(
+                "DELETE",
+                f"/indexes/{self.index_id}/documents",
+                json={"ids": ids},
+            )
+            return resp.json()
+
+        total_tombstones = 0
+        last_result: dict = {}
+        for start in range(0, len(ids), _BATCH):
+            batch = ids[start : start + _BATCH]
+            resp = self._client._request(
+                "DELETE",
+                f"/indexes/{self.index_id}/documents",
+                json={"ids": batch},
+            )
+            last_result = resp.json()
+            total_tombstones += last_result.get("tombstones_staged", len(batch))
+        last_result["tombstones_staged"] = total_tombstones
+        return last_result
 
     def build(self) -> dict:
         """
