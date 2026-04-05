@@ -50,8 +50,8 @@ results = index.query("financial derivatives risk models", top_k=10, mode="dense
 # Hybrid: semantic + BM25 keyword matching, fused and re-ranked
 results = index.query("AAPL earnings Q3 2025", top_k=10, mode="hybrid")
 
-# Hybrid with exact BM25 rescore for maximum precision
-results = index.query("AAPL earnings Q3 2025", top_k=10, mode="hybrid", exact_rescore=True)
+# Hybrid with exact keyword matching for maximum precision
+results = index.query("AAPL earnings Q3 2025", top_k=10, mode="hybrid", exact=True)
 ```
 
 Hybrid mode is strongest on queries with specific keywords, entity names, or codes where pure semantic search loses signal. Dense mode is better for abstract, conceptual queries. You choose per query.
@@ -158,7 +158,7 @@ results = index.query(
     top_k=10,
     mode="dense",              # "dense" or "hybrid"
     filter={"key": "value"},   # optional metadata filter
-    exact_rescore=False,       # exact BM25 rescore (hybrid only)
+    exact=False,               # exact keyword matching (hybrid only)
 )
 
 for r in results:

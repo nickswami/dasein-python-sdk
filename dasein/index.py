@@ -137,7 +137,7 @@ class Index:
         top_k: int = 10,
         mode: str = "dense",
         filter: dict[str, str] | None = None,
-        exact_rescore: bool = False,
+        exact: bool = False,
     ) -> list[QueryResult]:
         """
         Query the index.
@@ -150,7 +150,7 @@ class Index:
             top_k: Number of results to return
             mode: "dense" or "hybrid"
             filter: Metadata filter dict, e.g. {"tenant": "acme"}
-            exact_rescore: If True and mode is hybrid, use exact BM25 rescore
+            exact: Use exact keyword matching in hybrid mode
 
         Returns:
             List of QueryResult objects
@@ -165,8 +165,8 @@ class Index:
             payload["vector"] = vector
         if filter is not None:
             payload["filter"] = filter
-        if exact_rescore:
-            payload["exact_rescore"] = True
+        if exact:
+            payload["exact"] = True
 
         resp = self._client._request(
             "POST",
