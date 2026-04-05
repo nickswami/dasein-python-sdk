@@ -140,6 +140,7 @@ class Index:
         exact: bool = False,
         phrase: bool = False,
         fuzzy: bool = False,
+        alpha: float = 0.5,
     ) -> list[QueryResult]:
         """
         Query the index.
@@ -155,6 +156,8 @@ class Index:
             exact: Exact keyword matching -- only return docs containing all query terms
             phrase: Phrase matching -- only return docs containing the query as an exact phrase
             fuzzy: Fuzzy matching -- match keywords with typo tolerance (edit distance 1)
+            alpha: Balance between dense and BM25 in hybrid RRF fusion.
+                0.0 = all dense, 1.0 = all BM25, 0.5 = equal (default).
 
         Returns:
             List of QueryResult objects
@@ -175,6 +178,8 @@ class Index:
             payload["phrase"] = True
         if fuzzy:
             payload["fuzzy"] = True
+        if alpha != 0.5:
+            payload["alpha"] = alpha
 
         resp = self._client._request(
             "POST",

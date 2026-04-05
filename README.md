@@ -58,9 +58,12 @@ results = index.query("machine learning", top_k=10, mode="hybrid", phrase=True)
 
 # Fuzzy matching — handles typos (edit distance 1)
 results = index.query("machin lerning", top_k=10, mode="hybrid", fuzzy=True)
+
+# Tune the dense vs BM25 balance (0.0 = all dense, 1.0 = all BM25, default 0.5)
+results = index.query("AAPL earnings", top_k=10, mode="hybrid", alpha=0.7)  # lean keyword-heavy
 ```
 
-Hybrid mode is strongest on queries with specific keywords, entity names, or codes where pure semantic search loses signal. Dense mode is better for abstract, conceptual queries. You choose per query. The keyword features (`exact`, `phrase`, `fuzzy`) refine hybrid results — use them when you need precise keyword control.
+Hybrid mode is strongest on queries with specific keywords, entity names, or codes where pure semantic search loses signal. Dense mode is better for abstract, conceptual queries. You choose per query. The keyword features (`exact`, `phrase`, `fuzzy`) refine hybrid results — use them when you need precise keyword control. The `alpha` parameter lets you tune the balance between dense and BM25 ranking in the fusion step.
 
 ## Get an API Key
 
@@ -167,6 +170,7 @@ results = index.query(
     exact=False,               # exact keyword matching (hybrid only)
     phrase=False,              # exact phrase matching (hybrid only)
     fuzzy=False,               # typo-tolerant matching (hybrid only)
+    alpha=0.5,                 # dense vs BM25 balance (0=dense, 1=BM25)
 )
 
 for r in results:
