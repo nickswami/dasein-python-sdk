@@ -73,12 +73,22 @@ class Client:
 
     _IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "DELETE"})
     _SAFE_TO_RETRY_PATHS = frozenset({"/query"})
+    _IDEMPOTENT_POST_PATHS = frozenset({"/query", "/upsert"})
 
-    def _is_safe_retry(self, method: str, path: str) -> bool:
-        """503/504/connection retries are only safe for idempotent methods or read-only POSTs like query."""
+    def _is_safe_retry(self, method: str, path: str, status: int = 503) -> bool:
+        """503/504/connection retries are only safe for idempotent methods or read-only POSTs.
+
+        Exception: 504 on /upsert is retryable because upserts have replace
+        semantics (idempotent by document ID) and 504 indicates the gateway
+        timed out before processing began.
+        """
         if method.upper() in self._IDEMPOTENT_METHODS:
             return True
-        return any(path.endswith(s) for s in self._SAFE_TO_RETRY_PATHS)
+        if any(path.endswith(s) for s in self._SAFE_TO_RETRY_PATHS):
+            return True
+        if status == 504 and any(path.endswith(s) for s in self._IDEMPOTENT_POST_PATHS):
+            return True
+        return False
 
     def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
         """Make an HTTP request with retry logic for 429/503.
@@ -88,7 +98,7 @@ class Client:
         methods or known-safe read paths (e.g., /query) to avoid
         duplicating side effects on upsert/build/delete.
         """
-        safe_retry = self._is_safe_retry(method, path)
+        safe_retry_base = self._is_safe_retry(method, path)
         last_error = None
         for attempt in range(self.max_retries + 1):
             try:
@@ -99,7 +109,12 @@ class Client:
                 if resp.status_code == 403:
                     detail = self._extract_detail(resp)
                     detail_lower = detail.lower()
-                    if any(kw in detail_lower for kw in ("limit", "quota", "plan", "trial", "upgrade", "exceed")):
+                    _QUOTA_KEYWORDS = (
+                        "limit", "quota", "plan", "trial", "upgrade", "exceed",
+                        "subscription", "past due", "expired", "subscribe",
+                        "payment", "reactivate",
+                    )
+                    if any(kw in detail_lower for kw in _QUOTA_KEYWORDS):
                         raise DaseinQuotaError(detail)
                     raise DaseinAuthError(detail)
                 if resp.status_code == 404:
@@ -117,6 +132,7 @@ class Client:
 
                 if resp.status_code in (503, 504):
                     retry_after = float(resp.headers.get("Retry-After", "1"))
+                    safe_retry = self._is_safe_retry(method, path, status=resp.status_code)
                     if safe_retry and attempt < self.max_retries:
                         time.sleep(max(retry_after, 2 ** attempt))
                         continue
@@ -130,7 +146,7 @@ class Client:
 
             except (httpx.ConnectError, httpx.TimeoutException) as e:
                 last_error = e
-                if safe_retry and attempt < self.max_retries:
+                if safe_retry_base and attempt < self.max_retries:
                     time.sleep(2 ** attempt)
                     continue
                 raise DaseinUnavailableError(f"Connection failed: {e}")

@@ -285,14 +285,16 @@ print(info.vector_count)
 ```python
 from dasein.exceptions import (
     DaseinError,             # base exception
-    DaseinAuthError,         # 401/403 — bad or missing API key
-    DaseinQuotaError,        # 403 — plan/trial limit reached (upgrade required)
+    DaseinAuthError,         # 401 or 403 — bad/missing API key or forbidden
+    DaseinQuotaError,        # 403 — billing/plan/trial/subscription limit
     DaseinNotFoundError,     # 404 — index doesn't exist
-    DaseinRateLimitError,    # 429 — rate limit exceeded (has retry_after)
-    DaseinUnavailableError,  # 503 — service temporarily unavailable (has retry_after)
+    DaseinRateLimitError,    # 429 — rate limit or embed quota exceeded (has retry_after)
+    DaseinUnavailableError,  # 503/504 — service temporarily unavailable (has retry_after)
     DaseinBuildError,        # build failed
 )
 ```
+
+`DaseinQuotaError` covers: trial limits, plan vector caps, expired/past-due subscriptions, embed token quotas, and any 403 indicating a billing or plan constraint. `DaseinAuthError` is only raised for credential issues (bad API key, revoked key).
 
 ## License
 
