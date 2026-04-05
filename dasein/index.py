@@ -68,6 +68,7 @@ class Index:
 
         MAX_BATCH = 100
         results = []
+        any_staged = False
         for i in range(0, len(docs), MAX_BATCH):
             batch = docs[i:i + MAX_BATCH]
             resp = self._client._request(
@@ -75,36 +76,42 @@ class Index:
                 f"/indexes/{self.index_id}/upsert",
                 json={"documents": batch},
             )
-            results.append(resp.json())
+            batch_result = resp.json()
+            if batch_result.get("status") == "staged":
+                any_staged = True
+            results.append(batch_result)
 
         if len(results) == 1:
             return results[0]
-        return {
-            "status": "ok",
+
+        status = "staged" if any_staged else "ok"
+        merged = {
+            "status": status,
             "count": sum(r.get("count", 0) for r in results),
             "total": results[-1].get("total", 0),
         }
+        if any_staged:
+            merged["message"] = "One or more batches required a rebuild — data will be queryable after rebuild completes."
+        return merged
 
     def upsert_and_wait(self, documents: list[dict | UpsertItem],
                         timeout: float = 120.0) -> dict:
         """
         Upsert documents and wait for the index to become queryable (active).
 
-        Polls through building → built → placing → active. Returns early
-        with guidance if the index needs an explicit build (BYOV).
+        If upsert returns "staged" (live sync failed, rebuild queued), polls
+        until the rebuild completes and the index transitions back to active.
+        Also handles building → built → placing → active for first-time upserts.
         """
         result = self.upsert(documents)
-
-        if result.get("status") == "staged":
-            result["index_status"] = "staged"
-            result["live_sync"] = False
-            return result
 
         start = time.time()
         while time.time() - start < timeout:
             info = self.status()
             if info.status == "active":
                 result["index_status"] = "active"
+                if result.get("status") == "staged":
+                    result["live_sync"] = False
                 return result
             if info.status == "requires_build":
                 result["index_status"] = "requires_build"
@@ -118,11 +125,11 @@ class Index:
             time.sleep(2)
 
         info = self.status()
-        if info.status == "built":
-            result["index_status"] = "built"
+        if info.status in ("built", "building", "placing"):
+            result["index_status"] = info.status
             result["message"] = (
-                "Index built but not yet placed on a serving host. "
-                "This usually resolves within 60 seconds — try again shortly."
+                f"Index is {info.status} but not yet active. "
+                "This usually resolves shortly — try again."
             )
             return result
 

@@ -23,7 +23,12 @@ class DaseinRateLimitError(DaseinError):
 
 
 class DaseinAuthError(DaseinError):
-    """Raised on authentication failure (401/403)."""
+    """Raised on authentication failure (401, or 403 when credentials are invalid)."""
+    pass
+
+
+class DaseinQuotaError(DaseinError):
+    """Raised when a billing or plan quota limit is hit (403 with limit/quota detail)."""
     pass
 
 

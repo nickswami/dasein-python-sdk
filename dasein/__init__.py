@@ -6,6 +6,7 @@ from dasein.exceptions import (
     DaseinUnavailableError,
     DaseinRateLimitError,
     DaseinAuthError,
+    DaseinQuotaError,
     DaseinNotFoundError,
     DaseinBuildError,
 )
@@ -21,6 +22,7 @@ __all__ = [
     "DaseinUnavailableError",
     "DaseinRateLimitError",
     "DaseinAuthError",
+    "DaseinQuotaError",
     "DaseinNotFoundError",
     "DaseinBuildError",
 ]

@@ -20,6 +20,7 @@ from dasein.index import Index
 from dasein.types import IndexInfo
 from dasein.exceptions import (
     DaseinAuthError,
+    DaseinQuotaError,
     DaseinNotFoundError,
     DaseinUnavailableError,
     DaseinRateLimitError,
@@ -80,7 +81,11 @@ class Client:
                 if resp.status_code == 401:
                     raise DaseinAuthError(self._extract_detail(resp))
                 if resp.status_code == 403:
-                    raise DaseinAuthError(self._extract_detail(resp))
+                    detail = self._extract_detail(resp)
+                    detail_lower = detail.lower()
+                    if any(kw in detail_lower for kw in ("limit", "quota", "plan", "trial", "upgrade", "exceed")):
+                        raise DaseinQuotaError(detail)
+                    raise DaseinAuthError(detail)
                 if resp.status_code == 404:
                     raise DaseinNotFoundError(self._extract_detail(resp))
 
