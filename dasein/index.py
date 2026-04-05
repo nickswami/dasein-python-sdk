@@ -88,8 +88,10 @@ class Index:
     def upsert_and_wait(self, documents: list[dict | UpsertItem],
                         timeout: float = 120.0) -> dict:
         """
-        Upsert documents and wait for the index to become queryable (active)
-        or fully built (built). Detects requires_build and guides the user.
+        Upsert documents and wait for the index to become queryable (active).
+
+        Polls through building → built → placing → active. Returns early
+        with guidance if the index needs an explicit build (BYOV).
         """
         result = self.upsert(documents)
 
@@ -97,10 +99,7 @@ class Index:
         while time.time() - start < timeout:
             info = self.status()
             if info.status == "active":
-                return result
-            if info.status == "built":
-                result["index_status"] = "built"
-                result["message"] = "Index built successfully. Activate a subscription to make it queryable."
+                result["index_status"] = "active"
                 return result
             if info.status == "requires_build":
                 result["index_status"] = "requires_build"
@@ -113,7 +112,18 @@ class Index:
                 raise DaseinBuildError(f"Build failed for index {self.index_id}")
             time.sleep(2)
 
-        raise DaseinUnavailableError(f"Index {self.index_id} did not finish building within {timeout}s")
+        info = self.status()
+        if info.status == "built":
+            result["index_status"] = "built"
+            result["message"] = (
+                "Index built but not yet placed on a serving host. "
+                "This usually resolves within 60 seconds — try again shortly."
+            )
+            return result
+
+        raise DaseinUnavailableError(
+            f"Index {self.index_id} did not become active within {timeout}s (status: {info.status})"
+        )
 
     def query(
         self,
