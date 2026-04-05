@@ -134,6 +134,11 @@ class Client:
             dim=data.get("dim", 1024),
         )
 
+    def list_indexes(self) -> list[dict]:
+        """List all indexes owned by the authenticated user."""
+        resp = self._request("GET", "/indexes")
+        return resp.json().get("indexes", [])
+
     def get_index(self, index_id: str) -> Index:
         """Get an existing index by ID."""
         resp = self._request("GET", f"/indexes/{index_id}")

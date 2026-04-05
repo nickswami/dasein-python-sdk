@@ -108,10 +108,24 @@ index = client.create_index(
 )
 ```
 
+### List Indexes
+
+```python
+indexes = client.list_indexes()
+for idx in indexes:
+    print(idx["index_id"], idx["name"], idx["status"], idx["vector_count"])
+```
+
 ### Get Existing Index
 
 ```python
 index = client.get_index("index_id")
+```
+
+### Delete Index
+
+```python
+client.delete_index("index_id")
 ```
 
 ### Upsert Documents
@@ -124,6 +138,17 @@ index.upsert([
 ```
 
 Max 100 documents per call. The SDK automatically batches larger lists.
+
+You can also use the typed `UpsertItem` class instead of raw dicts:
+
+```python
+from dasein import UpsertItem
+
+index.upsert([
+    UpsertItem(id="doc1", text="Hello world", metadata={"type": "greeting"}),
+    UpsertItem(id="doc2", vector=[0.1, 0.2, ...]),
+])
+```
 
 ### Query
 
@@ -146,6 +171,14 @@ for r in results:
 index.delete(["doc1", "doc2"])
 ```
 
+### Upsert and Wait
+
+```python
+result = index.upsert_and_wait(documents, timeout=120.0)
+```
+
+Upserts documents and polls until the index becomes queryable. Useful for scripts where you want to upsert and immediately query.
+
 ### Build (BYOV only)
 
 ```python
@@ -153,6 +186,14 @@ index.build()
 ```
 
 Only needed for bring-your-own-vectors with unrecognized models. Known-model indexes build automatically after the first upsert.
+
+### Compact
+
+```python
+index.compact()
+```
+
+Triggers a compaction rebuild that removes deleted document tombstones from the graph. Run this after large batch deletions to reclaim performance.
 
 ### Index Status
 
