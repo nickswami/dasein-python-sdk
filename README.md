@@ -70,20 +70,20 @@ Hybrid mode is strongest on queries with specific keywords, entity names, or cod
 
 ## Get an API Key
 
-**Web:** Sign up with GitHub at [daseinai.ai/auth](https://dasein-api-939340394421.us-central1.run.app/auth/github) — no credit card required. You'll get an API key instantly.
+**Web:** Sign up with GitHub at [daseinai.ai/auth](https://dasein-api-mrfpdhsaeq-uc.a.run.app/auth/github) — no credit card required. You'll get an API key instantly.
 
 **CLI / Agents:**
 
 ```python
 import httpx, time
 
-resp = httpx.post("https://dasein-api-939340394421.us-central1.run.app/auth/device/start").json()
+resp = httpx.post("https://api.daseinai.ai/auth/device/start").json()
 print(f"Go to {resp['verification_uri']} and enter code: {resp['user_code']}")
 
 while True:
     time.sleep(resp.get("interval", 5))
     poll = httpx.post(
-        "https://dasein-api-939340394421.us-central1.run.app/auth/device/poll",
+        "https://dasein-api-mrfpdhsaeq-uc.a.run.app/auth/device/poll",
         json={"device_code": resp["device_code"]},
     ).json()
     if poll.get("api_key"):
@@ -289,13 +289,13 @@ from dasein.exceptions import (
     DaseinAuthError,         # 401, or 403 mentioning credentials / API key / revoked
     DaseinQuotaError,        # 403 — billing/plan/trial/subscription/embed limit
     DaseinNotFoundError,     # 404 — index doesn't exist
-    DaseinRateLimitError,    # 429 — rate limit or embed quota exceeded (has retry_after)
+    DaseinRateLimitError,    # 429 — transient rate limit exceeded (has retry_after)
     DaseinUnavailableError,  # 503/504 — service temporarily unavailable (has retry_after)
     DaseinBuildError,        # build failed
 )
 ```
 
-`DaseinAuthError` is raised only for credential issues (bad API key, revoked key, authentication failure). `DaseinQuotaError` covers trial limits, plan vector caps, expired/past-due subscriptions, and embed token quotas. A generic 403 (e.g., accessing a resource you don't own) raises `DaseinError` — catch it separately if you need to distinguish resource authorization from credential errors.
+`DaseinAuthError` is raised only for credential issues (bad API key, revoked key, authentication failure). `DaseinQuotaError` covers trial limits, plan vector caps, expired/past-due subscriptions, and embed token quotas (including 429s that indicate a non-transient monthly embed cap). `DaseinRateLimitError` is raised for transient per-second rate limits that the SDK retries automatically. A generic 403 (e.g., accessing a resource you don't own) raises `DaseinError` — catch it separately if you need to distinguish resource authorization from credential errors.
 
 ## License
 

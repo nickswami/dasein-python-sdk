@@ -27,7 +27,7 @@ from dasein.exceptions import (
     DaseinError,
 )
 
-DEFAULT_BASE_URL = "https://dasein-api-939340394421.us-central1.run.app"
+DEFAULT_BASE_URL = "https://dasein-api-mrfpdhsaeq-uc.a.run.app"
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_RETRIES = 3
 __version__ = "0.1.0"
