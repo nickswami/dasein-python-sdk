@@ -114,7 +114,8 @@ def test_create_index(mock_server):
 
     assert index.index_id == "abc123"
     assert index.model_id == "bge-large-en-v1.5"
-    assert MockHandler._request_log[-1]["headers"]["Authorization"] == "Bearer dsk_test_key_123"
+    headers = {k.lower(): v for k, v in MockHandler._request_log[-1]["headers"].items()}
+    assert headers["x-api-key"] == "dsk_test_key_123"
 
 
 def test_query(mock_server):
