@@ -101,18 +101,34 @@ while True:
 
 **Metadata filtering** — Attach key-value metadata to documents and filter at query time.
 
-**Automatic retries** — The SDK retries on 429 with exponential backoff. Read-only operations (queries, GETs) also retry on 503/504. Write operations (upsert, build, delete) do *not* retry on 503 to avoid duplicating side effects.
+**Automatic retries** — The SDK retries with exponential backoff:
+
+| Error | Read / query | Upsert / build / delete |
+|-------|-------------|------------------------|
+| 429 (rate limit) | Retried (up to `max_retries`) | Retried (up to `max_retries`) |
+| 503/504 (transient) | Retried | **Not retried** — to avoid duplicate side effects |
+| Connection error | Retried | **Not retried** |
 
 ## Embedding Models
 
-| Model | Dimensions | Notes |
-|-------|-----------|-------|
-| `bge-large-en-v1.5` | 1024 | Strong general-purpose English model |
-| `nomic-embed-text-v1.5` | 768 | Good balance of speed and quality |
-| `e5-large-v2` | 1024 | Microsoft's E5 family |
-| `gte-large-en-v1.5` | 1024 | Alibaba's GTE family |
+| Model | Dimensions | Matryoshka dims | Notes |
+|-------|-----------|----------------|-------|
+| `bge-large-en-v1.5` | 1024 | 512, 256, 128, 64 | Strong general-purpose English model |
+| `nomic-embed-text-v1.5` | 768 | 512, 384, 256, 128, 64 | Good balance of speed and quality |
+| `e5-large-v2` | 1024 | — | Microsoft's E5 family (no MRL support) |
+| `gte-large-en-v1.5` | 1024 | 512, 256, 128, 64 | Alibaba's GTE family |
 
 Or skip the model parameter and pass your own vectors of any dimension.
+
+### Matryoshka Dimension Truncation
+
+Models trained with Matryoshka Representation Learning (MRL) can be truncated to lower dimensions with minimal recall loss, cutting RAM and storage proportionally. Pass `dim` at index creation:
+
+```python
+index = client.create_index("my-docs", model="bge-large-en-v1.5", dim=256)
+```
+
+Embeddings are generated at full dimension and truncated + L2-renormalized before indexing. Queries are truncated the same way automatically. The first build for a truncated dimension uses an initial one-time build (slightly slower) since pretrained models are only available for native dimensions.
 
 ## API Reference
 
@@ -135,7 +151,8 @@ client = Client(
 index = client.create_index(
     name="my-index",
     model="bge-large-en-v1.5",  # None for bring-your-own-vectors
-    plan="dense",                # "dense" or "hybrid"
+    plan="dense",                # "dense" or "hybrid" (trial accounts get trial-tier limits)
+    dim=None,                    # truncate to lower dim for MRL models (e.g., 256)
 )
 ```
 

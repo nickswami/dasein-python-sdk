@@ -139,6 +139,7 @@ class Client:
         name: str,
         model: str | None = None,
         plan: str = "dense",
+        dim: int | None = None,
     ) -> Index:
         """
         Create a new index.
@@ -146,16 +147,20 @@ class Client:
         Args:
             name: Human-readable index name
             model: Embedding model ID (e.g., "bge-large-en-v1.5"). None for BYOV.
-            plan: "dense" ($10/mo) or "hybrid" ($15/mo)
+            plan: Index type — "dense" or "hybrid". Trial accounts get trial-tier
+                  limits regardless of the requested plan; the returned Index reflects
+                  the effective plan assigned by the server.
+            dim: Override embedding dimension for Matryoshka-capable models. The
+                 model's full-dimension embeddings are truncated and renormalized to
+                 this size. Pass None (default) to use the model's native dimension.
 
         Returns:
             Index object for upserting and querying
         """
-        resp = self._request("POST", "/indexes", json={
-            "name": name,
-            "model_id": model,
-            "plan": plan,
-        })
+        body: dict = {"name": name, "model_id": model, "plan": plan}
+        if dim is not None:
+            body["dim"] = dim
+        resp = self._request("POST", "/indexes", json=body)
         data = resp.json()
         return Index(
             client=self,

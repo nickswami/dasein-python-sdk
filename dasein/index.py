@@ -108,10 +108,18 @@ class Index:
         """
         result = self.upsert(documents)
 
+        needs_rebuild = result.get("status") == "staged" or result.get("live_sync") is False
+
         start = time.time()
+        seen_non_active = False
         while time.time() - start < timeout:
             info = self.status()
+            if info.status != "active":
+                seen_non_active = True
             if info.status == "active":
+                if needs_rebuild and not seen_non_active:
+                    time.sleep(1)
+                    continue
                 result["index_status"] = "active"
                 if result.get("status") == "staged":
                     result["live_sync"] = False
