@@ -95,6 +95,15 @@ class Index:
         """
         result = self.upsert(documents)
 
+        if result.get("status") == "staged":
+            result["index_status"] = "active"
+            result["live_sync"] = False
+            result["message"] = (
+                "Data saved but not immediately queryable. "
+                "Live sync to host failed; a rebuild will make it queryable."
+            )
+            return result
+
         start = time.time()
         while time.time() - start < timeout:
             info = self.status()

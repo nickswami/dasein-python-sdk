@@ -91,6 +91,8 @@ class Client:
                         continue
                     raise DaseinUnavailableError("Service unavailable", retry_after=retry_after)
 
+                if resp.status_code < 300:
+                    return resp
                 resp.raise_for_status()
                 return resp
 
