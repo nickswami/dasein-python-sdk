@@ -36,7 +36,7 @@ results = index.query("what is machine learning?", top_k=5)
 results = index.query("what is machine learning?", top_k=5, mode="hybrid")
 
 for r in results:
-    print(f"{r.id}: {r.score:.4f} — {r.text}")
+    print(f"{r.id}: {r.score:.4f}")
 ```
 
 ## Hybrid Search
@@ -182,19 +182,26 @@ index.upsert([
 
 ```python
 results = index.query(
-    text="search query",      # or vector=[0.1, 0.2, ...]
+    text="search query",         # or vector=[0.1, 0.2, ...]
     top_k=10,
-    mode="dense",              # "dense" or "hybrid"
-    filter={"key": "value"},   # optional metadata filter
-    exact=False,               # exact keyword matching (hybrid only)
-    phrase=False,              # exact phrase matching (hybrid only)
-    fuzzy=False,               # typo-tolerant matching (hybrid only)
-    alpha=0.5,                 # dense vs BM25 balance (0=dense, 1=BM25)
+    mode="dense",                # "dense" or "hybrid"
+    filter={"key": "value"},     # optional metadata filter
+    exact=False,                 # exact keyword matching (hybrid only)
+    phrase=False,                # exact phrase matching (hybrid only)
+    fuzzy=False,                 # typo-tolerant matching (hybrid only)
+    alpha=0.5,                   # dense vs BM25 balance (0=dense, 1=BM25)
+    include_text=False,          # return stored text (SSD read, off by default)
+    include_metadata=True,       # return stored metadata (SSD read, on by default)
 )
 
 for r in results:
-    print(r.id, r.score, r.text, r.metadata)
+    print(r.id, r.score, r.metadata)
 ```
+
+By default, queries return `id`, `score`, and `metadata` — but **not** the original text.
+This keeps the hot path fast (RAM-only for dense, RAM-only for default hybrid).
+Set `include_text=True` when you need the original text back.
+Set `include_metadata=False` for maximum QPS when you only need IDs and scores.
 
 ### Delete Documents
 

@@ -141,6 +141,8 @@ class Index:
         phrase: bool = False,
         fuzzy: bool = False,
         alpha: float = 0.5,
+        include_text: bool = False,
+        include_metadata: bool = True,
     ) -> list[QueryResult]:
         """
         Query the index.
@@ -158,6 +160,8 @@ class Index:
             fuzzy: Fuzzy matching -- match keywords with typo tolerance (edit distance 1)
             alpha: Balance between dense and BM25 in hybrid RRF fusion.
                 0.0 = all dense, 1.0 = all BM25, 0.5 = equal (default).
+            include_text: Return stored text in results (requires SSD read, default False).
+            include_metadata: Return stored metadata in results (requires SSD read, default True).
 
         Returns:
             List of QueryResult objects
@@ -180,6 +184,10 @@ class Index:
             payload["fuzzy"] = True
         if alpha != 0.5:
             payload["alpha"] = alpha
+        if include_text:
+            payload["include_text"] = True
+        if not include_metadata:
+            payload["include_metadata"] = False
 
         resp = self._client._request(
             "POST",
