@@ -1,6 +1,6 @@
 # Dasein
 
-Python SDK for the [Dasein](https://daseinai.ai) managed vector index service.
+Python SDK for the [Dasein](https://daseinai.ai/index) managed vector index service.
 
 Low-latency vector search with hybrid retrieval as a one-line toggle. Send raw text and get back ranked results — Dasein handles embedding, indexing, and serving.
 
