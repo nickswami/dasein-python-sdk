@@ -128,13 +128,15 @@ class Client:
 
                 if resp.status_code == 429:
                     retry_after = float(resp.headers.get("Retry-After", "1"))
+                    detail = self._extract_detail(resp) or "Rate limit exceeded"
+                    detail_lower = detail.lower()
+                    is_quota_cap = any(kw in detail_lower for kw in ("embed", "quota", "monthly", "allowance"))
+                    if is_quota_cap:
+                        raise DaseinQuotaError(detail)
                     if attempt < self.max_retries:
                         time.sleep(max(retry_after, 2 ** attempt))
                         continue
-                    raise DaseinRateLimitError(
-                        self._extract_detail(resp) or "Rate limit exceeded",
-                        retry_after=retry_after,
-                    )
+                    raise DaseinRateLimitError(detail, retry_after=retry_after)
 
                 if resp.status_code in (503, 504):
                     retry_after = float(resp.headers.get("Retry-After", "1"))
