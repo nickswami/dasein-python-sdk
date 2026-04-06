@@ -30,7 +30,7 @@ from dasein.exceptions import (
 DEFAULT_BASE_URL = "https://api.daseinai.ai"
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_RETRIES = 3
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 
 class Client:
@@ -73,7 +73,7 @@ class Client:
 
     _IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "DELETE"})
     _SAFE_TO_RETRY_PATHS = frozenset({"/query"})
-    _IDEMPOTENT_POST_PATHS = frozenset({"/query", "/upsert"})
+    _IDEMPOTENT_POST_PATHS = frozenset({"/query", "/upsert", "/upsert-binary"})
 
     def _is_safe_retry(self, method: str, path: str, status: int = 503) -> bool:
         """503/504/connection retries are only safe for idempotent methods or read-only POSTs.

@@ -3,8 +3,11 @@ Index class: upsert, query, delete, build, status.
 """
 from __future__ import annotations
 
+import io
 import time
 from typing import TYPE_CHECKING, Any, Optional
+
+import numpy as np
 
 from dasein.types import QueryResult, IndexInfo, UpsertItem
 from dasein.exceptions import DaseinError, DaseinBuildError, DaseinUnavailableError
@@ -79,12 +82,16 @@ class Index:
             if i > 0 and n_batches > 1:
                 time.sleep(0.15)
             batch = docs[i:i + MAX_BATCH]
-            resp = self._client._request(
-                "POST",
-                f"/indexes/{self.index_id}/upsert",
-                json={"documents": batch},
-                timeout=120.0,
-            )
+            use_binary = all("vector" in d for d in batch)
+            if use_binary:
+                resp = self._send_binary_batch(batch)
+            else:
+                resp = self._client._request(
+                    "POST",
+                    f"/indexes/{self.index_id}/upsert",
+                    json={"documents": batch},
+                    timeout=120.0,
+                )
             batch_result = resp.json()
             if batch_result.get("status") == "staged":
                 any_staged = True
@@ -102,6 +109,27 @@ class Index:
         if any_staged:
             merged["message"] = "One or more batches required a rebuild — data will be queryable after rebuild completes."
         return merged
+
+    def _send_binary_batch(self, batch: list[dict]):
+        """Pack BYOV batch as NPZ and POST as binary — ~3x faster than JSON."""
+        ids = np.array([str(d["id"]) for d in batch], dtype=object)
+        vectors = np.array([d["vector"] for d in batch], dtype=np.float32)
+        kw: dict = {"ids": ids, "vectors": vectors}
+        texts = [d.get("text") for d in batch]
+        if any(t is not None for t in texts):
+            kw["texts"] = np.array(texts, dtype=object)
+        metas = [d.get("metadata") for d in batch]
+        if any(m is not None for m in metas):
+            kw["metadatas"] = np.array(metas, dtype=object)
+        buf = io.BytesIO()
+        np.savez(buf, **kw)
+        return self._client._request(
+            "POST",
+            f"/indexes/{self.index_id}/upsert-binary",
+            content=buf.getvalue(),
+            headers={"Content-Type": "application/octet-stream"},
+            timeout=120.0,
+        )
 
     def upsert_and_wait(self, documents: list[dict | UpsertItem],
                         timeout: float = 120.0) -> dict:
