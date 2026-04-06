@@ -71,7 +71,7 @@ class Index:
                 raise ValueError(f"Expected dict or UpsertItem, got {type(d)}")
             docs.append(entry)
 
-        MAX_BATCH = 100
+        MAX_BATCH = 5000
         results = []
         any_staged = False
         n_batches = (len(docs) + MAX_BATCH - 1) // MAX_BATCH
@@ -83,6 +83,7 @@ class Index:
                 "POST",
                 f"/indexes/{self.index_id}/upsert",
                 json={"documents": batch},
+                timeout=120.0,
             )
             batch_result = resp.json()
             if batch_result.get("status") == "staged":

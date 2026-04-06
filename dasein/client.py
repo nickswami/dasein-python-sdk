@@ -30,7 +30,7 @@ from dasein.exceptions import (
 DEFAULT_BASE_URL = "https://api.daseinai.ai"
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_RETRIES = 3
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 
 
 class Client:
@@ -78,15 +78,12 @@ class Client:
     def _is_safe_retry(self, method: str, path: str, status: int = 503) -> bool:
         """503/504/connection retries are only safe for idempotent methods or read-only POSTs.
 
-        Exception: 504 on /upsert is retryable because upserts have replace
-        semantics (idempotent by document ID) and 504 indicates the gateway
-        timed out before processing began.
+        Upserts are idempotent by document ID (replace semantics), so 503/504
+        are safe to retry — the worst case is re-embedding the same texts.
         """
         if method.upper() in self._IDEMPOTENT_METHODS:
             return True
-        if any(path.endswith(s) for s in self._SAFE_TO_RETRY_PATHS):
-            return True
-        if status == 504 and any(path.endswith(s) for s in self._IDEMPOTENT_POST_PATHS):
+        if any(path.endswith(s) for s in self._IDEMPOTENT_POST_PATHS):
             return True
         return False
 
@@ -174,9 +171,7 @@ class Client:
         Args:
             name: Human-readable index name
             model: Embedding model ID (e.g., "bge-large-en-v1.5"). None for BYOV.
-            plan: Index type — "dense" or "hybrid". Trial accounts get trial-tier
-                  limits regardless of the requested plan; the returned Index reflects
-                  the effective plan assigned by the server.
+            plan: Index type — "dense" or "hybrid".
             dim: Override embedding dimension for Matryoshka-capable models. The
                  model's full-dimension embeddings are truncated and renormalized to
                  this size. Pass None (default) to use the model's native dimension.

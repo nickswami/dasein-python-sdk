@@ -106,9 +106,9 @@ while True:
 | Error | Read / query | Upsert | Build / delete |
 |-------|-------------|--------|----------------|
 | 429 (rate limit) | Retried (up to `max_retries`) | Retried | Retried |
-| 503 (transient) | Retried | Not retried | Not retried |
-| 504 (gateway timeout) | Retried | Retried (upserts are idempotent by doc ID) | Not retried |
-| Connection error | Retried | Not retried | Not retried |
+| 503 (transient) | Retried | Retried (upserts are idempotent by doc ID) | Not retried |
+| 504 (gateway timeout) | Retried | Retried | Not retried |
+| Connection error | Retried | Retried | Not retried |
 
 ## Embedding Models
 
@@ -152,7 +152,7 @@ client = Client(
 index = client.create_index(
     name="my-index",
     model="bge-large-en-v1.5",  # None for bring-your-own-vectors
-    plan="dense",                # "dense" or "hybrid" (trial accounts get trial-tier limits)
+    plan="dense",                # "dense" or "hybrid"
     dim=None,                    # truncate to lower dim for MRL models (e.g., 256)
 )
 ```
@@ -186,7 +186,7 @@ index.upsert([
 ])
 ```
 
-Max 100 documents per call. The SDK automatically batches larger lists.
+Max 5,000 documents per call for model-backed indexes (10,000 for bring-your-own-vectors). The SDK automatically batches larger lists.
 
 You can also use the typed `UpsertItem` class instead of raw dicts:
 
