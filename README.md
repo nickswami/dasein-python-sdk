@@ -4,7 +4,7 @@ Python SDK for the [Dasein](https://daseinai.ai/index) managed vector index serv
 
 Low-latency vector search with hybrid retrieval as a one-line toggle. Send raw text and get back ranked results — Dasein handles embedding, indexing, and serving.
 
-See our <a href="http://results.daseinai.ai" target="_blank">VectorDBBench results</a> for latency and recall benchmarks.
+See our <a href="https://results.daseinai.ai/results" target="_blank">VectorDBBench results</a> for latency and recall benchmarks.
 
 ## Install
 
@@ -70,20 +70,20 @@ Hybrid mode is strongest on queries with specific keywords, entity names, or cod
 
 ## Get an API Key
 
-**Web:** Sign up with GitHub at [daseinai.ai/auth](https://dasein-api-mrfpdhsaeq-uc.a.run.app/auth/github) — no credit card required. You'll get an API key instantly.
+**Web:** Sign up with GitHub at [daseinai.ai/auth](https://api.dasein.dev/auth/github) — no credit card required. You'll get an API key instantly.
 
 **CLI / Agents:**
 
 ```python
 import httpx, time
 
-resp = httpx.post("https://api.daseinai.ai/auth/device/start").json()
+resp = httpx.post("https://api.dasein.dev/auth/device/start").json()
 print(f"Go to {resp['verification_uri']} and enter code: {resp['user_code']}")
 
 while True:
     time.sleep(resp.get("interval", 5))
     poll = httpx.post(
-        "https://dasein-api-mrfpdhsaeq-uc.a.run.app/auth/device/poll",
+        "https://api.dasein.dev/auth/device/poll",
         json={"device_code": resp["device_code"]},
     ).json()
     if poll.get("api_key"):
