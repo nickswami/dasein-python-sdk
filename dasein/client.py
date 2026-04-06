@@ -27,7 +27,7 @@ from dasein.exceptions import (
     DaseinError,
 )
 
-DEFAULT_BASE_URL = "https://api.dasein.dev"
+DEFAULT_BASE_URL = "https://api.daseinai.ai"
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_RETRIES = 3
 __version__ = "0.2.0"
@@ -39,7 +39,7 @@ class Client:
 
     Args:
         api_key: Your Dasein API key (starts with dsk_)
-        base_url: API base URL (defaults to https://api.dasein.dev)
+        base_url: API base URL (defaults to https://api.daseinai.ai)
         timeout: Request timeout in seconds
         max_retries: Max retries for 429/503 responses
     """
