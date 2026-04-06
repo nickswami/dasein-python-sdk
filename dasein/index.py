@@ -7,10 +7,14 @@ import io
 import time
 from typing import TYPE_CHECKING, Any, Optional
 
-import numpy as np
-
 from dasein.types import QueryResult, IndexInfo, UpsertItem
 from dasein.exceptions import DaseinError, DaseinBuildError, DaseinUnavailableError
+
+try:
+    import numpy as np
+    _HAS_NUMPY = True
+except ImportError:
+    _HAS_NUMPY = False
 
 if TYPE_CHECKING:
     from dasein.client import Client
@@ -82,7 +86,7 @@ class Index:
             if i > 0 and n_batches > 1:
                 time.sleep(0.15)
             batch = docs[i:i + MAX_BATCH]
-            use_binary = all("vector" in d for d in batch)
+            use_binary = _HAS_NUMPY and all("vector" in d for d in batch)
             if use_binary:
                 resp = self._send_binary_batch(batch)
             else:
