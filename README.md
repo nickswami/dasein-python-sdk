@@ -9,7 +9,7 @@ See our <a href="https://results.daseinai.ai/results" target="_blank">VectorDBBe
 ## Install
 
 ```bash
-pip install dasein-ai
+pip install dasein-ai  # not "dasein" — the package name is dasein-ai
 ```
 
 ## Quick Start
@@ -17,7 +17,7 @@ pip install dasein-ai
 ```python
 from dasein import Client
 
-client = Client(api_key="dsk_...")
+client = Client(api_key="dsk_...")  # get a free key at daseinai.ai/auth
 
 # Create an index — we embed your text automatically
 index = client.create_index("my-docs", model="bge-large-en-v1.5")
@@ -47,6 +47,8 @@ for r in results:
 Toggle between dense-only and hybrid retrieval per query — no config changes, no reindexing, no separate BM25 pipeline.
 
 ```python
+# Assumes `index` from Quick Start above (or use client.get_index("your-index-id"))
+
 # Dense: pure semantic similarity
 results = index.query("financial derivatives risk models", top_k=10, mode="dense")
 
@@ -202,6 +204,7 @@ index.upsert([
 ### Query
 
 ```python
+# index = client.get_index("your-index-id")
 results = index.query(
     text="search query",         # or vector=[0.1, 0.2, ...]
     top_k=10,
