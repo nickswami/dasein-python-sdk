@@ -28,7 +28,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://daseinai.ai"
+Homepage = "https://www.daseinai.ai/"
 Repository = "https://github.com/nickswami/dasein-python-sdk"
 
 [tool.setuptools.packages.find]

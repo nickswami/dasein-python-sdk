@@ -1,6 +1,6 @@
 # Dasein
 
-Python SDK for the [Dasein](https://daseinai.ai/index) managed vector index service.
+Python SDK for the [Dasein](https://www.daseinai.ai/) managed vector index service.
 
 Low-latency vector search with hybrid retrieval as a one-line toggle. Send raw text and get back ranked results — Dasein handles embedding, indexing, and serving.
 
@@ -17,7 +17,7 @@ pip install dasein-ai  # not "dasein" — the package name is dasein-ai
 ```python
 from dasein import Client
 
-client = Client(api_key="dsk_...")  # get a free key at daseinai.ai/auth
+client = Client(api_key="dsk_...")  # get a free key at https://api.daseinai.ai/auth/github
 
 # Create an index — we embed your text automatically
 index = client.create_index("my-docs", model="bge-large-en-v1.5")
@@ -72,7 +72,7 @@ Hybrid mode is strongest on queries with specific keywords, entity names, or cod
 
 ## Get an API Key
 
-**Web:** Sign up with GitHub at [daseinai.ai/auth](https://api.daseinai.ai/auth/github) — no credit card required. You'll get an API key instantly.
+**Web:** Sign up with GitHub at [api.daseinai.ai/auth/github](https://api.daseinai.ai/auth/github) — no credit card required. You'll get an API key instantly.
 
 **CLI / Agents:**
 
