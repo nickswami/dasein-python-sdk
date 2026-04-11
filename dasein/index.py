@@ -198,7 +198,7 @@ class Index:
         fuzzy: bool = False,
         alpha: float = 0.5,
         include_text: bool = False,
-        include_metadata: bool = True,
+        include_metadata: bool = False,
     ) -> list[QueryResult]:
         """
         Query the index.
@@ -246,8 +246,8 @@ class Index:
             payload["alpha"] = alpha
         if include_text:
             payload["include_text"] = True
-        if not include_metadata:
-            payload["include_metadata"] = False
+        if include_metadata:
+            payload["include_metadata"] = True
 
         resp = self._client._request(
             "POST",

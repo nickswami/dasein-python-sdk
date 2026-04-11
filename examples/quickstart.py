@@ -30,28 +30,28 @@ for r in results:
 
 # --- Metadata filtering (all operators) ---
 print("\n=== Filter: numeric range ===")
-results = index.query("recent news", top_k=5, filter={"year": {"$gte": 2025}, "rating": {"$gt": 8.0}})
+results = index.query("recent news", top_k=5, filter={"year": {"$gte": 2025}, "rating": {"$gt": 8.0}}, include_metadata=True)
 for r in results:
     print(f"  {r.id}: {r.score:.4f} [{r.metadata}]")
 
 print("\n=== Filter: $in + equality ===")
-results = index.query("top stories", top_k=5, filter={"source": {"$in": ["reuters", "bloomberg"]}, "priority": 1})
+results = index.query("top stories", top_k=5, filter={"source": {"$in": ["reuters", "bloomberg"]}, "priority": 1}, include_metadata=True)
 for r in results:
     print(f"  {r.id}: {r.score:.4f} [{r.metadata}]")
 
 print("\n=== Filter: $or ===")
-results = index.query("tech news", top_k=5, filter={"$or": [{"category": "ai"}, {"category": "code"}]})
+results = index.query("tech news", top_k=5, filter={"$or": [{"category": "ai"}, {"category": "code"}]}, include_metadata=True)
 for r in results:
     print(f"  {r.id}: {r.score:.4f} [{r.metadata}]")
 
 print("\n=== Filter: $ne + $exists ===")
-results = index.query("everything except finance", top_k=5, filter={"category": {"$ne": "finance"}})
+results = index.query("everything except finance", top_k=5, filter={"category": {"$ne": "finance"}}, include_metadata=True)
 for r in results:
     print(f"  {r.id}: {r.score:.4f} [{r.metadata}]")
 
-# --- Bring your own vectors ---
+# --- Bring your own vectors (no hydration — fastest path) ---
 print("\n=== BYOV query ===")
-results = index.query(vector=[0.12, -0.03, 0.45] + [0.0] * 1021, top_k=3, include_metadata=False)
+results = index.query(vector=[0.12, -0.03, 0.45] + [0.0] * 1021, top_k=3)
 for r in results:
     print(f"  {r.id}: {r.score:.4f}")
 

@@ -38,9 +38,9 @@ index.upsert([
 results = index.query("what is machine learning?", top_k=5, mode="hybrid")
 
 # Filter by metadata — all operators are true pre-filters (no recall penalty)
-results = index.query("recent breakthroughs", top_k=5, filter={"year": {"$gte": 2025}})
-results = index.query("top stories", top_k=5, filter={"source": {"$in": ["reuters", "bloomberg"]}, "priority": 1})
-results = index.query("tech news", top_k=5, filter={"$or": [{"category": "ai"}, {"category": "code"}]})
+results = index.query("recent breakthroughs", top_k=5, filter={"year": {"$gte": 2025}}, include_metadata=True)
+results = index.query("top stories", top_k=5, filter={"source": {"$in": ["reuters", "bloomberg"]}, "priority": 1}, include_metadata=True)
+results = index.query("tech news", top_k=5, filter={"$or": [{"category": "ai"}, {"category": "code"}]}, include_metadata=True)
 
 for r in results:
     print(f"{r.id}: {r.score:.4f} — {r.metadata}")
@@ -147,7 +147,7 @@ filter={"$or": [{"category": "ai"}, {"priority": 1}]}
 filter={"source": "reuters", "year": {"$gte": 2024}, "category": {"$in": ["tech", "science"]}}
 ```
 
-All filter operators work with both dense and hybrid queries. Metadata is returned by default on every query.
+All filter operators work with both dense and hybrid queries. Pass `include_metadata=True` to return metadata with results.
 
 ## Get an API Key
 
@@ -303,7 +303,7 @@ results = index.query(
     fuzzy=False,                 # typo-tolerant matching (hybrid only)
     alpha=0.5,                   # dense vs BM25 balance (0=dense, 1=BM25)
     include_text=False,          # return stored text (off by default)
-    include_metadata=True,       # return stored metadata (on by default)
+    include_metadata=False,      # return stored metadata (off by default)
 )
 ```
 
@@ -311,28 +311,28 @@ results = index.query(
 
 | Setting | Returns | I/O cost |
 |---------|---------|----------|
-| Default | `id`, `score`, `metadata` | RAM only |
-| `include_text=True` | + `text` | Adds SSD read per result |
-| `include_metadata=False` | `id`, `score` only | Fastest — pure RAM, zero SSD |
+| Default | `id`, `score` | Zero — pure RAM, no SSD reads |
+| `include_metadata=True` | + `metadata` | Small SSD read per result (page-cached for hot indexes) |
+| `include_text=True` | + `text` | Larger SSD read per result |
 
 ```python
-# Maximum QPS — IDs and scores only, pure RAM
-results = index.query("quarterly earnings", top_k=10, include_metadata=False)
+# Default — IDs and scores only, pure RAM, maximum QPS
+results = index.query("quarterly earnings", top_k=10)
 for r in results:
     print(r.id, r.score)
 
-# Standard — IDs, scores, and metadata (default)
-results = index.query("quarterly earnings", top_k=10)
+# Include metadata
+results = index.query("quarterly earnings", top_k=10, include_metadata=True)
 for r in results:
     print(r.id, r.score, r.metadata)
 
-# Full hydration — include original text
-results = index.query("quarterly earnings", top_k=10, include_text=True)
+# Full hydration — metadata + original text
+results = index.query("quarterly earnings", top_k=10, include_text=True, include_metadata=True)
 for r in results:
     print(r.id, r.score, r.text, r.metadata)
 ```
 
-Text is stored on SSD and only fetched when you ask for it. This means the default dense and hybrid search paths are entirely RAM-resident — no disk I/O in the query hot path.
+Both text and metadata are stored on SSD and only fetched when you opt in. The default query path is entirely RAM-resident — no disk I/O.
 
 ### Delete Documents
 
