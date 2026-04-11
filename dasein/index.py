@@ -32,14 +32,14 @@ class Index:
         client: Client,
         index_id: str,
         model_id: str | None = None,
-        plan: str = "dense",
+        index_type: str = "dense",
         dim: int = 1024,
         max_vectors: int | None = None,
     ):
         self._client = client
         self.index_id = index_id
         self.model_id = model_id
-        self.plan = plan
+        self.index_type = index_type
         self.dim = dim
         self.max_vectors = max_vectors
 
@@ -312,4 +312,4 @@ class Index:
         return self._client.index_info(self.index_id)
 
     def __repr__(self) -> str:
-        return f"Index(id={self.index_id!r}, plan={self.plan!r}, model={self.model_id!r})"
+        return f"Index(id={self.index_id!r}, index_type={self.index_type!r}, model={self.model_id!r})"

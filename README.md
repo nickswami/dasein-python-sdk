@@ -2,7 +2,7 @@
 
 Python SDK for the [Dasein](https://www.daseinai.ai/) managed vector index service.
 
-Low-latency vector search with hybrid retrieval as a one-line toggle. Send raw text and get back ranked results — Dasein handles embedding, indexing, and serving.
+Low-latency vector search with hybrid retrieval. Send raw text and get back ranked results — Dasein handles embedding, indexing, and serving.
 
 See our <a href="https://results.daseinai.ai/results" target="_blank">VectorDBBench results</a> for latency and recall benchmarks.
 
@@ -19,36 +19,53 @@ from dasein import Client
 
 client = Client(api_key="dsk_...")  # get a free key at https://api.daseinai.ai/auth/github
 
-# Create an index — we embed your text automatically
-index = client.create_index("my-docs", model="bge-large-en-v1.5")
+# Create a hybrid index (semantic + keyword search)
+index = client.create_index("my-docs", index_type="hybrid", model="bge-large-en-v1.5")
 
-# Upsert documents
+# Upsert documents — metadata values must be strings
 index.upsert([
     {"id": "doc1", "text": "Machine learning is a subset of AI", "metadata": {"topic": "ai"}},
     {"id": "doc2", "text": "Python is great for data science", "metadata": {"topic": "code"}},
     {"id": "doc3", "text": "The stock market rallied today", "metadata": {"topic": "finance"}},
 ])
 
-# Dense search — returns id, score, metadata (all from RAM, no SSD)
-results = index.query("what is machine learning?", top_k=5)
-
-# Flip to hybrid — combines dense vectors with BM25 in a single call
+# Hybrid search — combines semantic similarity with BM25 keyword matching
 results = index.query("what is machine learning?", top_k=5, mode="hybrid")
 
+# Dense-only search — pure semantic similarity, no keyword matching
+results = index.query("what is machine learning?", top_k=5, mode="dense")
+
 # Need the original text back? Opt in (adds SSD read per result)
-results = index.query("what is machine learning?", top_k=5, include_text=True)
+results = index.query("what is machine learning?", top_k=5, mode="hybrid", include_text=True)
 
 for r in results:
     print(f"{r.id}: {r.score:.4f} — {r.metadata}")
 ```
 
-## Hybrid Search
+## Choosing an Index Type
 
-Toggle between dense-only and hybrid retrieval per query — no config changes, no reindexing, no separate BM25 pipeline.
+You choose the index type at creation time. This determines what search modes are available.
+
+| `index_type` | What it builds | Query modes available |
+|---|---|---|
+| `"hybrid"` | Dense vectors + BM25 inverted index | `mode="hybrid"` and `mode="dense"` |
+| `"dense"` | Dense vectors only | `mode="dense"` only |
+
+**Use `"hybrid"` unless you have a reason not to.** Hybrid indexes support both dense and hybrid queries — you choose per query. Dense indexes are smaller in RAM but cannot use keyword search.
 
 ```python
-# Assumes `index` from Quick Start above (or use client.get_index("your-index-id"))
+# Hybrid index — supports both query modes
+index = client.create_index("my-docs", index_type="hybrid", model="bge-large-en-v1.5")
 
+# Dense-only index — only supports mode="dense"
+index = client.create_index("my-docs", index_type="dense", model="bge-large-en-v1.5")
+```
+
+## Hybrid Search
+
+Hybrid indexes support per-query toggling between dense-only and hybrid retrieval — no reindexing, no separate BM25 pipeline.
+
+```python
 # Dense: pure semantic similarity
 results = index.query("financial derivatives risk models", top_k=10, mode="dense")
 
@@ -69,6 +86,31 @@ results = index.query("AAPL earnings", top_k=10, mode="hybrid", alpha=0.7)  # le
 ```
 
 Hybrid mode is strongest on queries with specific keywords, entity names, or codes where pure semantic search loses signal. Dense mode is better for abstract, conceptual queries. You choose per query. The keyword features (`exact`, `phrase`, `fuzzy`) refine hybrid results — use them when you need precise keyword control. The `alpha` parameter lets you tune the balance between dense and BM25 ranking in the fusion step.
+
+## Metadata
+
+Attach key-value metadata to documents for filtering at query time. **All metadata values must be strings.**
+
+```python
+index.upsert([
+    {
+        "id": "doc1",
+        "text": "SpaceX launched Starship",
+        "metadata": {
+            "source": "reuters",
+            "category": "space",
+            "year": "2025",          # numbers must be strings
+            "priority": "1",         # numbers must be strings
+        },
+    },
+])
+
+# Filter at query time
+results = index.query("rocket launch", top_k=10, filter={"source": "reuters"})
+results = index.query("rocket launch", top_k=10, filter={"category": "space", "year": "2025"})
+```
+
+Metadata is stored in RAM and returned by default on every query. Up to 1,000 unique filter values per index.
 
 ## Get an API Key
 
@@ -99,9 +141,9 @@ while True:
 
 **Bring your own vectors** — Already have embeddings? Pass them directly with any dimension.
 
-**Hybrid search as a toggle** — Switch between dense and hybrid retrieval per query. No reindexing, no separate BM25 infrastructure.
+**Hybrid search** — Switch between dense and hybrid retrieval per query. No reindexing, no separate BM25 infrastructure.
 
-**Metadata filtering** — Attach key-value metadata to documents and filter at query time.
+**Metadata filtering** — Attach string key-value metadata to documents and filter at query time.
 
 **Automatic retries** — The SDK retries with exponential backoff:
 
@@ -128,7 +170,7 @@ Or skip the model parameter and pass your own vectors of any dimension.
 Models trained with Matryoshka Representation Learning (MRL) can be truncated to lower dimensions with minimal recall loss, cutting RAM and storage proportionally. Pass `dim` at index creation:
 
 ```python
-index = client.create_index("my-docs", model="bge-large-en-v1.5", dim=256)
+index = client.create_index("my-docs", index_type="hybrid", model="bge-large-en-v1.5", dim=256)
 ```
 
 Embeddings are generated at full dimension and truncated + L2-renormalized before indexing. Queries are truncated the same way automatically. The first build for a truncated dimension uses an initial one-time build (slightly slower) since pretrained models are only available for native dimensions.
@@ -153,11 +195,15 @@ client = Client(
 ```python
 index = client.create_index(
     name="my-index",
-    model="bge-large-en-v1.5",  # None for bring-your-own-vectors
-    plan="dense",                # "dense" or "hybrid"
-    dim=None,                    # truncate to lower dim for MRL models (e.g., 256)
+    index_type="hybrid",             # REQUIRED CHOICE: "dense" or "hybrid"
+    model="bge-large-en-v1.5",      # None for bring-your-own-vectors
+    dim=None,                        # truncate to lower dim for MRL models (e.g., 256)
 )
 ```
+
+`index_type` determines what search capabilities the index has:
+- `"hybrid"` — builds both a dense vector index and a BM25 inverted index. Supports `mode="dense"` and `mode="hybrid"` queries.
+- `"dense"` — builds a dense vector index only. Supports `mode="dense"` queries only.
 
 ### List Indexes
 
@@ -183,10 +229,16 @@ client.delete_index("index_id")
 
 ```python
 index.upsert([
-    {"id": "doc1", "text": "Hello world"},
-    {"id": "doc2", "vector": [0.1, 0.2, ...], "metadata": {"type": "example"}},
+    {"id": "doc1", "text": "Hello world", "metadata": {"type": "greeting"}},
+    {"id": "doc2", "text": "Goodbye world", "metadata": {"type": "farewell"}},
 ])
 ```
+
+Each document can have:
+- `id` (required) — unique document ID (string or int)
+- `text` — raw text (embedded automatically if the index has a model)
+- `vector` — pre-computed embedding (list of floats)
+- `metadata` — `dict[str, str]` for filtering. **All values must be strings.**
 
 Max 5,000 documents per call for model-backed indexes (10,000 for bring-your-own-vectors). The SDK automatically batches larger lists.
 
@@ -204,12 +256,11 @@ index.upsert([
 ### Query
 
 ```python
-# index = client.get_index("your-index-id")
 results = index.query(
     text="search query",         # or vector=[0.1, 0.2, ...]
     top_k=10,
-    mode="dense",                # "dense" or "hybrid"
-    filter={"key": "value"},     # optional metadata filter
+    mode="hybrid",               # "dense" or "hybrid" (hybrid requires index_type="hybrid")
+    filter={"key": "value"},     # optional metadata filter (string values only)
     exact=False,                 # exact keyword matching (hybrid only)
     phrase=False,                # exact phrase matching (hybrid only)
     fuzzy=False,                 # typo-tolerant matching (hybrid only)
@@ -223,7 +274,7 @@ results = index.query(
 
 | Setting | Returns | I/O cost |
 |---------|---------|----------|
-| Default | `id`, `score`, `metadata` | RAM only (dense) or RAM only (hybrid) |
+| Default | `id`, `score`, `metadata` | RAM only |
 | `include_text=True` | + `text` | Adds SSD read per result |
 | `include_metadata=False` | `id`, `score` only | Fastest — pure RAM, zero SSD |
 

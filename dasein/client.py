@@ -161,8 +161,8 @@ class Client:
     def create_index(
         self,
         name: str,
+        index_type: str = "dense",
         model: str | None = None,
-        plan: str = "dense",
         dim: int | None = None,
     ) -> Index:
         """
@@ -170,8 +170,9 @@ class Client:
 
         Args:
             name: Human-readable index name
+            index_type: "dense" (semantic only) or "hybrid" (semantic + BM25 keyword search).
+                You must create a hybrid index to use mode="hybrid" in queries.
             model: Embedding model ID (e.g., "bge-large-en-v1.5"). None for BYOV.
-            plan: Index type — "dense" or "hybrid".
             dim: Override embedding dimension for Matryoshka-capable models. The
                  model's full-dimension embeddings are truncated and renormalized to
                  this size. Pass None (default) to use the model's native dimension.
@@ -179,7 +180,7 @@ class Client:
         Returns:
             Index object for upserting and querying
         """
-        body: dict = {"name": name, "model_id": model, "plan": plan}
+        body: dict = {"name": name, "model_id": model, "index_type": index_type}
         if dim is not None:
             body["dim"] = dim
         resp = self._request("POST", "/indexes", json=body)
@@ -188,7 +189,7 @@ class Client:
             client=self,
             index_id=data["index_id"],
             model_id=model,
-            plan=data.get("plan", plan),
+            index_type=data.get("index_type", data.get("plan", index_type)),
             dim=data.get("dim", 1024),
             max_vectors=data.get("max_vectors"),
         )
@@ -206,7 +207,7 @@ class Client:
             client=self,
             index_id=data["index_id"],
             model_id=data.get("model_id"),
-            plan=data.get("plan", "dense"),
+            index_type=data.get("index_type", data.get("plan", "dense")),
             dim=data.get("dim", 1024),
             max_vectors=data.get("max_vectors"),
         )

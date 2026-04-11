@@ -7,7 +7,7 @@ from dasein import Client
 
 client = Client(api_key="dsk_your_api_key_here")
 
-index = client.create_index("my-rag-docs", model="bge-large-en-v1.5")
+index = client.create_index("my-rag-docs", index_type="hybrid", model="bge-large-en-v1.5")
 
 index.upsert([
     {"id": "doc1", "text": "The quick brown fox jumps over the lazy dog", "metadata": {"tenant": "acme", "type": "faq"}},
@@ -15,11 +15,11 @@ index.upsert([
     {"id": "doc3", "text": "PostgreSQL supports full text search natively", "metadata": {"tenant": "globex", "type": "docs"}},
 ])
 
-results = index.query("what is machine learning?", top_k=5, include_text=True)
+results = index.query("what is machine learning?", top_k=5, mode="hybrid", include_text=True)
 for r in results:
     print(f"  {r.id}: {r.score:.4f} - {r.text}")
 
-results = index.query("machine learning", top_k=5, filter={"tenant": "acme"})
+results = index.query("machine learning", top_k=5, mode="hybrid", filter={"tenant": "acme"})
 for r in results:
     print(f"  {r.id}: {r.score:.4f} [{r.metadata}]")
 

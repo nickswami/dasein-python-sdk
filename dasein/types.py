@@ -28,7 +28,7 @@ class IndexInfo:
     """Index metadata. Tolerates extra keys from API for forward compat."""
     index_id: str
     status: str
-    plan: str | None = None
+    index_type: str | None = None
     vector_count: int = 0
     model_id: str | None = None
     has_text: bool = False
@@ -37,5 +37,8 @@ class IndexInfo:
 
     @classmethod
     def from_dict(cls, data: dict) -> "IndexInfo":
+        mapped = dict(data)
+        if "plan" in mapped and "index_type" not in mapped:
+            mapped["index_type"] = mapped.pop("plan")
         known = {f.name for f in cls.__dataclass_fields__.values()}
-        return cls(**{k: v for k, v in data.items() if k in known})
+        return cls(**{k: v for k, v in mapped.items() if k in known})
