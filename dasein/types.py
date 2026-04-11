@@ -11,7 +11,7 @@ class UpsertItem:
     id: str | int
     vector: list[float] | None = None
     text: str | None = None
-    metadata: dict[str, str] | None = None
+    metadata: dict[str, int | float | str] | None = None
 
 
 @dataclass

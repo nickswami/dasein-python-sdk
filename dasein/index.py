@@ -51,7 +51,7 @@ class Index:
           - id (required): unique document ID
           - text: raw text (we embed it if model is set)
           - vector: pre-computed embedding vector
-          - metadata: dict of string key-value pairs for filtering
+          - metadata: dict of key-value pairs for filtering (values: str, int, or float)
 
         Args:
             documents: List of dicts or UpsertItem objects
@@ -192,7 +192,7 @@ class Index:
         vector: list[float] | None = None,
         top_k: int = 10,
         mode: str = "dense",
-        filter: dict[str, str] | None = None,
+        filter: dict[str, Any] | None = None,
         exact: bool = False,
         phrase: bool = False,
         fuzzy: bool = False,
@@ -210,7 +210,11 @@ class Index:
             vector: Query vector (list of floats)
             top_k: Number of results to return
             mode: "dense" or "hybrid"
-            filter: Metadata filter dict, e.g. {"tenant": "acme"}
+            filter: Metadata filter dict. Supports equality, $ne, $in, $nin,
+                $exists, $gt/$gte/$lt/$lte, and $or. Example::
+
+                    {"genre": "sci-fi", "year": {"$gte": 2020}}
+
             exact: Exact keyword matching -- only return docs containing all query terms
             phrase: Phrase matching -- only return docs containing the query as an exact phrase
             fuzzy: Fuzzy matching -- match keywords with typo tolerance (edit distance 1)

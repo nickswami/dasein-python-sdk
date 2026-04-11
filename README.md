@@ -22,21 +22,25 @@ client = Client(api_key="dsk_...")  # get a free key at https://api.daseinai.ai/
 # Create a hybrid index (semantic + keyword search)
 index = client.create_index("my-docs", index_type="hybrid", model="bge-large-en-v1.5")
 
-# Upsert documents — metadata values must be strings
+# Upsert documents — metadata values can be strings, ints, or floats
 index.upsert([
-    {"id": "doc1", "text": "Machine learning is a subset of AI", "metadata": {"topic": "ai"}},
-    {"id": "doc2", "text": "Python is great for data science", "metadata": {"topic": "code"}},
-    {"id": "doc3", "text": "The stock market rallied today", "metadata": {"topic": "finance"}},
+    {"id": "doc1", "text": "SpaceX launched Starship on its 5th test flight",
+     "metadata": {"source": "reuters", "category": "space", "year": 2025, "priority": 1}},
+    {"id": "doc2", "text": "GPT-5 achieves superhuman reasoning on ARC-AGI",
+     "metadata": {"source": "arxiv", "category": "ai", "year": 2025, "priority": 2}},
+    {"id": "doc3", "text": "Fed holds rates steady amid cooling inflation",
+     "metadata": {"source": "bloomberg", "category": "finance", "year": 2025, "priority": 3}},
+    {"id": "doc4", "text": "Python 3.13 ships with a JIT compiler",
+     "metadata": {"source": "pep", "category": "code", "year": 2024, "priority": 1}},
 ])
 
-# Hybrid search — combines semantic similarity with BM25 keyword matching
+# Hybrid search — semantic similarity + BM25 keyword matching
 results = index.query("what is machine learning?", top_k=5, mode="hybrid")
 
-# Dense-only search — pure semantic similarity, no keyword matching
-results = index.query("what is machine learning?", top_k=5, mode="dense")
-
-# Need the original text back? Opt in (adds SSD read per result)
-results = index.query("what is machine learning?", top_k=5, mode="hybrid", include_text=True)
+# Filter by metadata — all operators are true pre-filters (no recall penalty)
+results = index.query("recent breakthroughs", top_k=5, filter={"year": {"$gte": 2025}})
+results = index.query("top stories", top_k=5, filter={"source": {"$in": ["reuters", "bloomberg"]}, "priority": 1})
+results = index.query("tech news", top_k=5, filter={"$or": [{"category": "ai"}, {"category": "code"}]})
 
 for r in results:
     print(f"{r.id}: {r.score:.4f} — {r.metadata}")
@@ -89,7 +93,7 @@ Hybrid mode is strongest on queries with specific keywords, entity names, or cod
 
 ## Metadata
 
-Attach key-value metadata to documents for filtering at query time. **All metadata values must be strings.**
+Attach key-value metadata to documents for filtering at query time. Values can be strings, integers, or floats.
 
 ```python
 index.upsert([
@@ -99,18 +103,51 @@ index.upsert([
         "metadata": {
             "source": "reuters",
             "category": "space",
-            "year": "2025",          # numbers must be strings
-            "priority": "1",         # numbers must be strings
+            "year": 2025,
+            "priority": 1,
+            "rating": 9.2,
         },
     },
 ])
 
-# Filter at query time
+# Simple equality
 results = index.query("rocket launch", top_k=10, filter={"source": "reuters"})
-results = index.query("rocket launch", top_k=10, filter={"category": "space", "year": "2025"})
+results = index.query("rocket launch", top_k=10, filter={"category": "space", "year": 2025})
 ```
 
-Metadata is stored in RAM and returned by default on every query. Up to 1,000 unique filter values per index.
+### Filtering
+
+Filters are true pre-filters — candidates that don't match are never touched. No recall penalty.
+
+```python
+# Equality (default — bare values are $eq)
+filter={"genre": "sci-fi"}
+filter={"genre": {"$eq": "sci-fi"}}  # equivalent explicit form
+
+# Not equal
+filter={"status": {"$ne": "archived"}}
+
+# In set
+filter={"category": {"$in": ["ai", "finance", "health"]}}
+
+# Not in set
+filter={"source": {"$nin": ["spam", "test"]}}
+
+# Exists / not exists
+filter={"author": {"$exists": True}}
+
+# Numeric range
+filter={"year": {"$gte": 2020, "$lte": 2025}}
+filter={"rating": {"$gt": 7.5}}
+
+# OR across keys
+filter={"$or": [{"category": "ai"}, {"priority": 1}]}
+
+# Combine (AND by default)
+filter={"source": "reuters", "year": {"$gte": 2024}, "category": {"$in": ["tech", "science"]}}
+```
+
+All filter operators work with both dense and hybrid queries. Metadata is returned by default on every query.
 
 ## Get an API Key
 
@@ -143,7 +180,7 @@ while True:
 
 **Hybrid search** — Switch between dense and hybrid retrieval per query. No reindexing, no separate BM25 infrastructure.
 
-**Metadata filtering** — Attach string key-value metadata to documents and filter at query time.
+**Metadata filtering** — Attach metadata to documents and filter at query time with operators like `$in`, `$ne`, `$gte`, `$lte`, and `$or`. True pre-filters with no recall penalty.
 
 **Automatic retries** — The SDK retries with exponential backoff:
 
@@ -238,7 +275,7 @@ Each document can have:
 - `id` (required) — unique document ID (string or int)
 - `text` — raw text (embedded automatically if the index has a model)
 - `vector` — pre-computed embedding (list of floats)
-- `metadata` — `dict[str, str]` for filtering. **All values must be strings.**
+- `metadata` — `dict[str, str | int | float]` for filtering
 
 Max 5,000 documents per call for model-backed indexes (10,000 for bring-your-own-vectors). The SDK automatically batches larger lists.
 
@@ -260,7 +297,7 @@ results = index.query(
     text="search query",         # or vector=[0.1, 0.2, ...]
     top_k=10,
     mode="hybrid",               # "dense" or "hybrid" (hybrid requires index_type="hybrid")
-    filter={"key": "value"},     # optional metadata filter (string values only)
+    filter={"key": "value"},     # optional metadata filter (supports operators — see Filtering)
     exact=False,                 # exact keyword matching (hybrid only)
     phrase=False,                # exact phrase matching (hybrid only)
     fuzzy=False,                 # typo-tolerant matching (hybrid only)
