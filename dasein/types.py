@@ -24,6 +24,33 @@ class QueryResult:
 
 
 @dataclass
+class QueryResponse:
+    """Query results plus server-side timing from X-*-Us response headers.
+
+    Behaves like a list of QueryResult for backward compatibility —
+    you can iterate, index, and len() it directly.
+    """
+    results: list[QueryResult]
+    round_trip_ms: float = 0.0
+    server_total_us: int = 0
+    search_us: int = 0
+    embed_us: int = 0
+    auth_us: int = 0
+    rate_us: int = 0
+    route_us: int = 0
+    resp_us: int = 0
+
+    def __iter__(self):
+        return iter(self.results)
+
+    def __len__(self):
+        return len(self.results)
+
+    def __getitem__(self, idx):
+        return self.results[idx]
+
+
+@dataclass
 class IndexInfo:
     """Index metadata. Tolerates extra keys from API for forward compat."""
     index_id: str
@@ -34,6 +61,7 @@ class IndexInfo:
     has_text: bool = False
     dim: int = 1024
     max_vectors: int | None = None
+    ram_bytes: int | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "IndexInfo":

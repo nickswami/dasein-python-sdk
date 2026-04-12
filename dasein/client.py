@@ -11,6 +11,7 @@ Usage:
 """
 from __future__ import annotations
 
+import os
 import time
 from typing import Optional
 
@@ -55,7 +56,7 @@ class Client:
             raise DaseinAuthError("API key is required")
 
         self.api_key = api_key
-        self.base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
+        self.base_url = (base_url or os.environ.get("DASEIN_BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
         self.timeout = timeout
         self.max_retries = max_retries
         self._client = httpx.Client(

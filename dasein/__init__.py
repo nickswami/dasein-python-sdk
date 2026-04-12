@@ -1,6 +1,6 @@
 from dasein.client import Client
 from dasein.index import Index
-from dasein.types import QueryResult, UpsertItem, IndexInfo
+from dasein.types import QueryResult, QueryResponse, UpsertItem, IndexInfo
 from dasein.exceptions import (
     DaseinError,
     DaseinUnavailableError,
@@ -16,6 +16,7 @@ __all__ = [
     "Client",
     "Index",
     "QueryResult",
+    "QueryResponse",
     "UpsertItem",
     "IndexInfo",
     "DaseinError",
