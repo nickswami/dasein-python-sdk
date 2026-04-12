@@ -72,12 +72,15 @@ if q:
     res = ix.query(text=q, top_k=10, mode="hybrid", alpha=alpha, filter=f or None,
                    include_metadata=True, include_text=True)
 
-    c = st.columns(3)
     embed_ms = res.embed_us / 1000
-    search_ms = (res.server_total_us - res.embed_us) / 1000
+    search_ms = res.search_us / 1000
+    server_ms = res.server_total_us / 1000
+    network_ms = max(res.round_trip_ms - server_ms, 0)
+    c = st.columns(4)
     c[0].metric("Total", f"{res.round_trip_ms:.0f} ms")
-    c[1].metric("Embedding", f"{embed_ms:.0f} ms")
-    c[2].metric("Dasein search", f"{max(search_ms, 0):.1f} ms")
+    c[1].metric("Embed (GPU)", f"{embed_ms:.0f} ms")
+    c[2].metric("Search (Dasein)", f"{search_ms:.1f} ms")
+    c[3].metric("Network", f"{network_ms:.0f} ms")
     st.divider()
 
     top = res[0].score if res else 1
