@@ -1,14 +1,22 @@
 import os, sys
 
+DATA_URL = "https://storage.googleapis.com/dasein-473321-artifacts/examples/movies.zip"
+
 if "streamlit" not in sys.modules:
-    import time, zipfile, pathlib, pandas as pd
+    import time, zipfile, pathlib, urllib.request, pandas as pd
     from dasein import Client
 
     client = Client(api_key=os.environ["DASEIN_API_KEY"])
 
     if not any(i.get("name") == "movies" and i.get("status") == "active" for i in client.list_indexes()):
-        z = zipfile.ZipFile(os.environ.get("MOVIES_ZIP",
-                            pathlib.Path(__file__).resolve().parent.parent / "data" / "movies.zip"))
+        data_dir = pathlib.Path(__file__).resolve().parent / "data"
+        zip_path = data_dir / "movies.zip"
+        if not zip_path.exists():
+            data_dir.mkdir(parents=True, exist_ok=True)
+            print(f"Downloading movie data from {DATA_URL} ...")
+            urllib.request.urlretrieve(DATA_URL, zip_path)
+            print("Done.")
+        z = zipfile.ZipFile(zip_path)
         df = pd.read_csv(z.open(next(n for n in z.namelist() if n.endswith(".csv"))),
                          usecols=["id", "title", "tagline", "overview", "keywords", "release_date",
                                   "vote_count", "vote_average", "poster_path", "genres",

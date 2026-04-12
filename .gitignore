@@ -11,3 +11,4 @@ build/
 .venv/
 venv/
 .pytest_cache/
+examples/**/data/

@@ -29,7 +29,7 @@ from dasein.exceptions import (
 DEFAULT_BASE_URL = "https://api.daseinai.ai"
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_RETRIES = 3
-__version__ = "0.3.1"
+__version__ = "0.4.0"
 
 
 class Client:
