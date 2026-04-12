@@ -119,7 +119,7 @@ def test_create_index(mock_server):
 
 
 def test_query(mock_server):
-    MockHandler._responses[("POST", "/indexes/abc123/query")] = {
+    MockHandler._responses[("POST", "/v1/indexes/abc123/query")] = {
         "status": 200,
         "body": {
             "results": [
@@ -174,7 +174,7 @@ def test_rate_limit_retry(mock_server):
     call_count = [0]
     original_responses = MockHandler._responses.copy()
 
-    MockHandler._responses[("POST", "/indexes/abc123/query")] = {
+    MockHandler._responses[("POST", "/v1/indexes/abc123/query")] = {
         "status": 429,
         "body": {"detail": "rate limited"},
         "headers": {"Retry-After": "0.01"},
@@ -189,7 +189,7 @@ def test_rate_limit_retry(mock_server):
 
 
 def test_filter_query(mock_server):
-    MockHandler._responses[("POST", "/indexes/abc123/query")] = {
+    MockHandler._responses[("POST", "/v1/indexes/abc123/query")] = {
         "status": 200,
         "body": {"results": [{"id": "doc1", "score": 0.9}], "mode": "dense"},
     }
