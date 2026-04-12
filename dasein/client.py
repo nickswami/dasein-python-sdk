@@ -13,8 +13,6 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Optional
-
 import httpx
 
 from dasein.index import Index
@@ -76,7 +74,6 @@ class Client:
             return resp.text or f"HTTP {resp.status_code}"
 
     _IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "DELETE"})
-    _SAFE_TO_RETRY_PATHS = frozenset({"/query"})
     _IDEMPOTENT_POST_PATHS = frozenset({"/query", "/upsert", "/upsert-binary"})
 
     def _is_safe_retry(self, method: str, path: str, status: int = 503) -> bool:

@@ -1,0 +1,3 @@
+streamlit
+dasein-ai
+pandas

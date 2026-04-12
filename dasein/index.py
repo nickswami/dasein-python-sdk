@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import io
 import time
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from dasein.types import QueryResult, QueryResponse, IndexInfo, UpsertItem
 from dasein.exceptions import DaseinError, DaseinBuildError, DaseinUnavailableError
