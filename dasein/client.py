@@ -61,7 +61,10 @@ class Client:
         self.max_retries = max_retries
         self._client = httpx.Client(
             base_url=self.base_url,
-            headers={"X-API-Key": api_key},
+            headers={
+                "X-API-Key": api_key,
+                "Authorization": f"Bearer {api_key}",
+            },
             timeout=timeout,
         )
 
