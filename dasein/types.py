@@ -61,6 +61,7 @@ class IndexInfo:
     has_text: bool = False
     dim: int = 1024
     max_vectors: int | None = None
+    index_mode: str | None = None
     ram_bytes: int | None = None
 
     @classmethod
