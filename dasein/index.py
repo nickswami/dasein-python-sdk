@@ -7,7 +7,7 @@ import io
 import time
 from typing import TYPE_CHECKING, Any, Optional
 
-from dasein.types import QueryResult, IndexInfo, UpsertItem
+from dasein.types import QueryResult, QueryResponse, IndexInfo, UpsertItem
 from dasein.exceptions import DaseinError, DaseinBuildError, DaseinUnavailableError
 
 try:
@@ -78,7 +78,7 @@ class Index:
                 raise ValueError(f"Expected dict or UpsertItem, got {type(d)}")
             docs.append(entry)
 
-        MAX_BATCH = 5000
+        MAX_BATCH = 2000
         results = []
         any_staged = False
         n_batches = (len(docs) + MAX_BATCH - 1) // MAX_BATCH
@@ -94,7 +94,7 @@ class Index:
                     "POST",
                     f"/indexes/{self.index_id}/upsert",
                     json={"documents": batch},
-                    timeout=120.0,
+                    timeout=300.0,
                 )
             batch_result = resp.json()
             if batch_result.get("status") == "staged":
@@ -199,7 +199,7 @@ class Index:
         alpha: float = 0.5,
         include_text: bool = False,
         include_metadata: bool = False,
-    ) -> list[QueryResult]:
+    ) -> QueryResponse:
         """
         Query the index.
 
@@ -224,7 +224,7 @@ class Index:
             include_metadata: Return stored metadata in results (requires SSD read, default True).
 
         Returns:
-            List of QueryResult objects
+            QueryResponse (iterable like a list of QueryResult, with timing attrs)
         """
         if text is None and vector is None:
             raise ValueError("Either text or vector must be provided")
@@ -249,13 +249,17 @@ class Index:
         if include_metadata:
             payload["include_metadata"] = True
 
+        t0 = time.perf_counter()
         resp = self._client._request(
             "POST",
-            f"/indexes/{self.index_id}/query",
+            f"/v1/indexes/{self.index_id}/query",
             json=payload,
         )
+        round_trip_ms = (time.perf_counter() - t0) * 1000
+
+        h = resp.headers
         data = resp.json()
-        return [
+        results = [
             QueryResult(
                 id=r["id"],
                 score=r.get("score", 0.0),
@@ -264,6 +268,17 @@ class Index:
             )
             for r in data.get("results", [])
         ]
+        return QueryResponse(
+            results=results,
+            round_trip_ms=round_trip_ms,
+            server_total_us=int(h.get("x-total-us", 0)),
+            search_us=int(h.get("x-search-us", 0) or h.get("x-daemon-us", 0)),
+            embed_us=int(h.get("x-embed-us", 0) or h.get("x-build-us", 0)),
+            auth_us=int(h.get("x-auth-us", 0)),
+            rate_us=int(h.get("x-rate-us", 0)),
+            route_us=int(h.get("x-route-us", 0)),
+            resp_us=int(h.get("x-resp-us", 0)),
+        )
 
     def delete(self, ids: list[str | int]) -> dict:
         """Delete documents by ID. Automatically batches if more than 1000 IDs."""
