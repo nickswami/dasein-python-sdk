@@ -221,7 +221,7 @@ class Index:
             alpha: Balance between dense and BM25 in hybrid RRF fusion.
                 0.0 = all dense, 1.0 = all BM25, 0.5 = equal (default).
             include_text: Return stored text in results (requires SSD read, default False).
-            include_metadata: Return stored metadata in results (requires SSD read, default True).
+            include_metadata: Return stored metadata in results (requires SSD read, default False).
 
         Returns:
             QueryResponse (iterable like a list of QueryResult, with timing attrs)
