@@ -199,6 +199,7 @@ class Index:
         alpha: float = 0.5,
         include_text: bool = False,
         include_metadata: bool = False,
+        include_vectors: bool = False,
     ) -> QueryResponse:
         """
         Query the index.
@@ -222,6 +223,7 @@ class Index:
                 0.0 = all dense, 1.0 = all BM25, 0.5 = equal (default).
             include_text: Return stored text in results (requires SSD read, default False).
             include_metadata: Return stored metadata in results (requires SSD read, default False).
+            include_vectors: Return reconstructed approximate vectors (from RAM, default False).
 
         Returns:
             QueryResponse (iterable like a list of QueryResult, with timing attrs)
@@ -248,6 +250,8 @@ class Index:
             payload["include_text"] = True
         if include_metadata:
             payload["include_metadata"] = True
+        if include_vectors:
+            payload["include_vectors"] = True
 
         t0 = time.perf_counter()
         resp = self._client._request(
@@ -265,6 +269,7 @@ class Index:
                 score=r.get("score", 0.0),
                 text=r.get("text"),
                 metadata=r.get("metadata"),
+                vector=r.get("vector"),
             )
             for r in data.get("results", [])
         ]

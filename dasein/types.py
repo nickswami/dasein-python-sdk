@@ -21,6 +21,7 @@ class QueryResult:
     score: float
     text: str | None = None
     metadata: dict[str, Any] | None = None
+    vector: list[float] | None = None
 
 
 @dataclass

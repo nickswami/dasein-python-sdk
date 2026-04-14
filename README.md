@@ -304,6 +304,7 @@ results = index.query(
     alpha=0.5,                   # dense vs BM25 balance (0=dense, 1=BM25)
     include_text=False,          # return stored text (off by default)
     include_metadata=False,      # return stored metadata (off by default)
+    include_vectors=False,       # return approximate vectors (off by default)
 )
 ```
 
@@ -314,6 +315,7 @@ results = index.query(
 | Default | `id`, `score` | Zero — pure RAM, no SSD reads |
 | `include_metadata=True` | + `metadata` | Small SSD read per result (page-cached for hot indexes) |
 | `include_text=True` | + `text` | Larger SSD read per result |
+| `include_vectors=True` | + `vector` | Zero — reconstructed from RAM (approximate) |
 
 ```python
 # Default — IDs and scores only, pure RAM, maximum QPS
@@ -330,9 +332,14 @@ for r in results:
 results = index.query("quarterly earnings", top_k=10, include_text=True, include_metadata=True)
 for r in results:
     print(r.id, r.score, r.text, r.metadata)
+
+# Include approximate vectors (reconstructed from RAM, no disk I/O)
+results = index.query("quarterly earnings", top_k=10, include_vectors=True)
+for r in results:
+    print(r.id, r.score, len(r.vector))  # vector is a list[float] with dim elements
 ```
 
-Both text and metadata are stored on SSD and only fetched when you opt in. The default query path is entirely RAM-resident — no disk I/O.
+Text and metadata are stored on SSD and only fetched when you opt in. Vectors are reconstructed from compact codes already in RAM — no disk I/O. The default query path is entirely RAM-resident.
 
 ### Delete Documents
 
