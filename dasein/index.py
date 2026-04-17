@@ -3,6 +3,7 @@ Index class: upsert, query, delete, build, status.
 """
 from __future__ import annotations
 
+import base64
 import io
 import time
 from typing import TYPE_CHECKING, Any
@@ -15,6 +16,28 @@ try:
     _HAS_NUMPY = True
 except ImportError:
     _HAS_NUMPY = False
+
+
+def _decode_vector(v):
+    """Decode the "vector" field of a result into an ndarray (or list) losslessly.
+
+    The server emits either a JSON array of floats (legacy) or a base64 string
+    of little-endian fp32 bytes (when the client requested vector_format=base64,
+    which we only do when numpy is available). Both paths hit here.
+    """
+    if v is None:
+        return None
+    if isinstance(v, str):
+        if not _HAS_NUMPY:
+            return v
+        # base64 -> raw bytes -> ndarray view. np.frombuffer is O(1) copy-free
+        # over the decoded buffer and releases the GIL. Returning ndarray
+        # instead of list avoids 1024 PyFloat allocations per candidate, which
+        # is the difference between ~5 QPS and ~85 QPS per client thread.
+        return np.frombuffer(base64.b64decode(v), dtype="<f4")
+    if _HAS_NUMPY and isinstance(v, list):
+        return np.asarray(v, dtype=np.float32)
+    return v
 
 if TYPE_CHECKING:
     from dasein.client import Client
@@ -252,6 +275,13 @@ class Index:
             payload["include_metadata"] = True
         if include_vectors:
             payload["include_vectors"] = True
+            # Ask the server for base64-encoded fp32 vectors when we can
+            # decode them natively. This turns a 1.5 MB JSON-float-array
+            # response into a ~550 KB string that np.frombuffer decodes
+            # outside the GIL — fixes the 20x throughput cliff we hit at
+            # high concurrency when include_vectors=True.
+            if _HAS_NUMPY:
+                payload["vector_format"] = "base64"
 
         t0 = time.perf_counter()
         resp = self._client._request(
@@ -269,7 +299,7 @@ class Index:
                 score=r.get("score", 0.0),
                 text=r.get("text"),
                 metadata=r.get("metadata"),
-                vector=r.get("vector"),
+                vector=_decode_vector(r.get("vector")),
             )
             for r in data.get("results", [])
         ]

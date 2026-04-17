@@ -16,12 +16,18 @@ class UpsertItem:
 
 @dataclass
 class QueryResult:
-    """A single search result."""
+    """A single search result.
+
+    `vector` is either a numpy.ndarray (float32, preferred — returned when the
+    SDK can request and decode the base64 wire format), a list[float] (legacy
+    JSON path when numpy isn't installed), or None (when include_vectors=False).
+    Callers should tolerate both. np.asarray(v) normalizes either form.
+    """
     id: str | int
     score: float
     text: str | None = None
     metadata: dict[str, Any] | None = None
-    vector: list[float] | None = None
+    vector: Any | None = None
 
 
 @dataclass
