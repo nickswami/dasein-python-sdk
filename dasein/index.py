@@ -1,5 +1,5 @@
 """
-Index class: upsert, query, delete, build, status.
+Index class: upsert, query, query_batch, delete, build, status.
 """
 from __future__ import annotations
 
@@ -16,6 +16,32 @@ try:
     _HAS_NUMPY = True
 except ImportError:
     _HAS_NUMPY = False
+
+# orjson is ~3-5x faster than stdlib json on large dicts/arrays and crucially
+# releases the GIL during parsing, which matters when N client threads hammer
+# query() concurrently. We fall back to stdlib silently so the SDK stays a
+# pure drop-in with zero required extras.
+try:
+    import orjson as _orjson
+
+    def _loads(data: bytes | str) -> Any:
+        if isinstance(data, str):
+            data = data.encode("utf-8")
+        return _orjson.loads(data)
+except ImportError:
+    import json as _json
+
+    def _loads(data: bytes | str) -> Any:
+        if isinstance(data, (bytes, bytearray)):
+            data = data.decode("utf-8")
+        return _json.loads(data)
+
+
+def _resp_json(resp) -> Any:
+    """Parse an httpx.Response body using orjson if available, else stdlib.
+    Use this on the query hot path; non-latency-sensitive callers can keep
+    using resp.json()."""
+    return _loads(resp.content)
 
 
 def _decode_vector(v):
@@ -38,6 +64,7 @@ def _decode_vector(v):
     if _HAS_NUMPY and isinstance(v, list):
         return np.asarray(v, dtype=np.float32)
     return v
+
 
 if TYPE_CHECKING:
     from dasein.client import Client
@@ -292,7 +319,7 @@ class Index:
         round_trip_ms = (time.perf_counter() - t0) * 1000
 
         h = resp.headers
-        data = resp.json()
+        data = _resp_json(resp)
         results = [
             QueryResult(
                 id=r["id"],
@@ -314,6 +341,111 @@ class Index:
             route_us=int(h.get("x-route-us", 0)),
             resp_us=int(h.get("x-resp-us", 0)),
         )
+
+    def query_batch(
+        self,
+        queries: list[dict[str, Any]],
+    ) -> list[QueryResponse]:
+        """Run many queries in one HTTP round-trip.
+
+        ``query_batch`` is functionally identical to calling ``query()`` N
+        times — same server-side search path, same RRF hybrid fusion, same
+        filter operators, same flags (``mode``, ``exact``, ``phrase``,
+        ``fuzzy``, ``alpha``), same ``include_text`` / ``include_metadata`` /
+        ``include_vectors`` options. The only difference is that up to
+        4096 queries travel on one TCP connection in one JSON payload,
+        amortizing HTTP / TLS / router overhead over the whole batch.
+
+        Args:
+            queries: list of per-query parameter dicts. Each dict takes
+                the same keys as ``Index.query(...)`` — e.g. ``vector``,
+                ``text``, ``top_k``, ``mode``, ``filter``, ``exact``,
+                ``phrase``, ``fuzzy``, ``alpha``, ``include_text``,
+                ``include_metadata``, ``include_vectors``. A single query
+                must supply either ``vector`` or ``text`` (hybrid indexes
+                with a model can auto-embed ``text`` just like
+                ``query()``).
+
+        Returns:
+            list[QueryResponse] — one entry per input query, in the same
+            order. Malformed entries come back as empty result sets rather
+            than failing the whole batch; re-run those slots individually
+            to get the 400-class error message.
+        """
+        if not queries:
+            return []
+        if len(queries) > 4096:
+            raise ValueError("query_batch: max 4096 queries per call")
+
+        norm_queries = []
+        for q in queries:
+            if not isinstance(q, dict):
+                raise ValueError("query_batch: each query must be a dict")
+            entry: dict[str, Any] = {}
+            # Normalize accepted keys; accept ndarray vectors (fast path).
+            if "vector" in q and q["vector"] is not None:
+                v = q["vector"]
+                if _HAS_NUMPY and isinstance(v, np.ndarray):
+                    v = v.astype(np.float32, copy=False).tolist()
+                entry["vector"] = v
+            for key in (
+                "text", "top_k", "mode", "filter",
+                "exact", "phrase", "fuzzy", "alpha",
+                "include_text", "include_metadata", "include_vectors",
+            ):
+                if key in q and q[key] is not None:
+                    entry[key] = q[key]
+            # Ask for base64 vectors whenever numpy can decode them. The
+            # server emits one setting for the whole response, so if ANY
+            # sub-query wants vectors we opt the entire batch in. Callers
+            # that don't set include_vectors won't see any "vector" fields
+            # regardless.
+            if _HAS_NUMPY and entry.get("include_vectors"):
+                entry["vector_format"] = "base64"
+            norm_queries.append(entry)
+
+        payload = {"queries": norm_queries}
+
+        t0 = time.perf_counter()
+        resp = self._client._request(
+            "POST",
+            f"/v1/indexes/{self.index_id}/batch_query",
+            json=payload,
+            timeout=120.0,
+        )
+        round_trip_ms = (time.perf_counter() - t0) * 1000
+
+        data = _resp_json(resp)
+        batches = data.get("batches", [])
+        if len(batches) != len(queries):
+            raise DaseinError(
+                f"Batch response mismatch: sent {len(queries)} queries, "
+                f"got {len(batches)} result sets"
+            )
+
+        h = resp.headers
+        search_us = int(h.get("x-search-us", 0))
+        total_us = int(h.get("x-total-us", 0))
+
+        out: list[QueryResponse] = []
+        for b in batches:
+            results = [
+                QueryResult(
+                    id=r["id"],
+                    score=r.get("score", 0.0),
+                    text=r.get("text"),
+                    metadata=r.get("metadata"),
+                    vector=_decode_vector(r.get("vector")),
+                )
+                for r in b.get("results", [])
+            ]
+            out.append(QueryResponse(
+                results=results,
+                round_trip_ms=round_trip_ms,
+                server_total_us=total_us,
+                search_us=search_us,
+            ))
+        return out
 
     def delete(self, ids: list[str | int]) -> dict:
         """Delete documents by ID. Automatically batches if more than 1000 IDs."""

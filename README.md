@@ -336,10 +336,61 @@ for r in results:
 # Include approximate vectors (reconstructed from RAM, no disk I/O)
 results = index.query("quarterly earnings", top_k=10, include_vectors=True)
 for r in results:
-    print(r.id, r.score, len(r.vector))  # vector is a list[float] with dim elements
+    # r.vector is a numpy.ndarray (float32) when numpy is installed,
+    # or a list[float] otherwise. np.asarray(r.vector) works for both.
+    print(r.id, r.score, len(r.vector))
 ```
 
 Text and metadata are stored on SSD and only fetched when you opt in. Vectors are reconstructed from compact codes already in RAM — no disk I/O. The default query path is entirely RAM-resident.
+
+#### Wire format for `include_vectors`
+
+When numpy is available, the SDK automatically asks the server for vectors as base64-encoded little-endian `float32` bytes, then decodes them with `np.frombuffer` outside the GIL. This avoids allocating thousands of Python `float` objects per response and is the path that unlocks high throughput under concurrent use. If numpy isn't installed, the SDK falls back to the legacy JSON-array-of-floats wire format transparently.
+
+### Query Batch
+
+For workloads that run many queries back-to-back — training loops, evaluation suites, mining — use `query_batch` to amortize HTTP / TLS / router overhead across a single round-trip.
+
+```python
+# Each entry takes the same keys as Index.query(...)
+batch = [
+    {"vector": v, "top_k": 10, "include_vectors": True}
+    for v in my_query_vectors
+]  # up to 4096
+responses = index.query_batch(batch)
+
+for q_idx, resp in enumerate(responses):
+    for r in resp:
+        print(q_idx, r.id, r.score)
+```
+
+`query_batch` is **functionally identical to calling `query()` N times** — same server-side search path, same hybrid RRF fusion, same filter operators, same flags. The only difference is that many queries travel on one TCP connection in one JSON payload. You can mix dense and hybrid queries, different `top_k`, different `filter`, different `include_*` choices in the same batch.
+
+```python
+# Every key that query() takes works inside query_batch() entries:
+batch = [
+    {"text": "rocket launch",    "top_k": 5,  "mode": "hybrid"},
+    {"text": "quarterly earnings","top_k": 10, "filter": {"year": {"$gte": 2024}},
+     "include_metadata": True},
+    {"vector": my_vec,           "top_k": 20, "include_vectors": True},
+]
+responses = index.query_batch(batch)
+```
+
+Response ordering matches request ordering: `responses[i]` corresponds to `batch[i]`. Malformed entries come back as an empty result set rather than failing the whole batch — re-run those slots individually to get the 400-class error.
+
+Limits:
+
+- Max 4096 queries per call.
+- Request body capped at 16 MiB (the router's inbound limit). With 1024-dim JSON-encoded query vectors, that's roughly 1500 queries per batch before you need to split. Bring-your-own-vector batches can stretch further by passing smaller `top_k` and fewer includes.
+
+### Optional: faster JSON parsing
+
+If `orjson` is importable the SDK will use it for query / query_batch response parsing automatically. It's strictly optional — no changes to your code — but installing it noticeably reduces CPU on the query hot path, especially for large batch responses:
+
+```bash
+pip install orjson
+```
 
 ### Delete Documents
 
