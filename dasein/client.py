@@ -13,10 +13,11 @@ from __future__ import annotations
 
 import os
 import time
+from typing import Any
 import httpx
 
-from dasein.index import Index
-from dasein.types import IndexInfo
+from dasein.index import Index, _decode_vector, _resp_json
+from dasein.types import IndexInfo, QueryResult, QueryResponse
 from dasein.exceptions import (
     DaseinAuthError,
     DaseinQuotaError,
@@ -26,10 +27,16 @@ from dasein.exceptions import (
     DaseinError,
 )
 
+try:
+    import numpy as _np
+    _HAS_NUMPY = True
+except ImportError:
+    _HAS_NUMPY = False
+
 DEFAULT_BASE_URL = "https://api.daseinai.ai"
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_RETRIES = 3
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 
 class Client:
@@ -78,7 +85,7 @@ class Client:
             return resp.text or f"HTTP {resp.status_code}"
 
     _IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "DELETE"})
-    _IDEMPOTENT_POST_PATHS = frozenset({"/query", "/upsert", "/upsert-binary"})
+    _IDEMPOTENT_POST_PATHS = frozenset({"/query", "/upsert", "/upsert-binary", "/batch_query"})
 
     def _is_safe_retry(self, method: str, path: str, status: int = 503) -> bool:
         """503/504/connection retries are only safe for idempotent methods or read-only POSTs.
@@ -226,6 +233,131 @@ class Client:
     def delete_index(self, index_id: str) -> None:
         """Delete an index permanently."""
         self._request("DELETE", f"/indexes/{index_id}")
+
+    def query_batch(
+        self,
+        queries: list[dict[str, Any]],
+    ) -> list[QueryResponse]:
+        """Run many queries in a single HTTP round-trip, fanned out across any
+        mix of indexes — same feature surface as ``Index.query()``.
+
+        Each entry is a dict with all the kwargs ``Index.query()`` accepts,
+        plus the target index. Vectors may be passed as ``list[float]`` or
+        ``numpy.ndarray``; text sub-queries are auto-embedded server-side
+        using the index's model. A single request can hit hundreds of
+        different indexes — the router buckets by index, fans out to the
+        owning pods in parallel, and coalesces embed calls by model so a
+        batch of 256 texts across 60 indexes costs O(distinct models) embed
+        calls, not 256.
+
+        Args:
+            queries: list of per-query dicts. Each dict must include::
+
+                {
+                    "index_id":  "<uuid>",          # required
+                    "text":      "hello",           # OR "vector"
+                    "vector":    [0.1, 0.2, ...],   # OR "text"
+                    "top_k":     10,
+                    "mode":      "dense" | "hybrid",
+                    "filter":    {...},             # optional metadata filter
+                    "exact":     True,              # optional keyword match flags
+                    "phrase":    True,
+                    "fuzzy":     True,
+                    "alpha":     0.5,
+                    "include_text":     False,
+                    "include_metadata": False,
+                    "include_vectors":  True,
+                }
+
+        Returns:
+            list[QueryResponse] — one entry per input query, in request
+            order. Per-slot failures (index not loaded, auth failure,
+            malformed query) come back as empty result sets with the HTTP
+            body's ``error`` field preserved on the response; they do not
+            fail the whole batch. Re-run the slot individually to get the
+            same error you would have seen from ``query()``.
+
+        Raises:
+            DaseinError: if the top-level request itself fails (network,
+                auth, 5xx from the router). Per-slot errors do NOT raise.
+        """
+        if not queries:
+            return []
+        if len(queries) > 4096:
+            raise ValueError("query_batch: max 4096 queries per call")
+
+        norm: list[dict[str, Any]] = []
+        any_wants_vec = False
+        for q in queries:
+            if not isinstance(q, dict):
+                raise ValueError("query_batch: each query must be a dict")
+            if not q.get("index_id"):
+                raise ValueError("query_batch: each query must include 'index_id'")
+            entry: dict[str, Any] = {"index_id": q["index_id"]}
+
+            v = q.get("vector")
+            if v is not None:
+                if _HAS_NUMPY and isinstance(v, _np.ndarray):
+                    v = v.astype(_np.float32, copy=False).tolist()
+                entry["vector"] = v
+
+            for key in (
+                "text", "top_k", "mode", "filter",
+                "exact", "phrase", "fuzzy", "alpha",
+                "include_text", "include_metadata", "include_vectors",
+            ):
+                if key in q and q[key] is not None:
+                    entry[key] = q[key]
+
+            if entry.get("include_vectors"):
+                any_wants_vec = True
+                if _HAS_NUMPY:
+                    entry["vector_format"] = "base64"
+            norm.append(entry)
+
+        payload = {"queries": norm}
+
+        t0 = time.perf_counter()
+        resp = self._request(
+            "POST",
+            "/v1/batch_query",
+            json=payload,
+            timeout=300.0,
+        )
+        round_trip_ms = (time.perf_counter() - t0) * 1000
+
+        data = _resp_json(resp)
+        batches = data.get("batches", [])
+        if len(batches) != len(queries):
+            raise DaseinError(
+                f"Batch response mismatch: sent {len(queries)} queries, "
+                f"got {len(batches)} result sets"
+            )
+
+        h = resp.headers
+        search_us = int(h.get("x-search-us", 0))
+        total_us  = int(h.get("x-total-us",  0))
+
+        out: list[QueryResponse] = []
+        for b in batches:
+            results = [
+                QueryResult(
+                    id=r["id"],
+                    score=r.get("score", 0.0),
+                    text=r.get("text"),
+                    metadata=r.get("metadata"),
+                    vector=_decode_vector(r.get("vector")) if any_wants_vec else None,
+                )
+                for r in b.get("results", [])
+            ]
+            out.append(QueryResponse(
+                results=results,
+                round_trip_ms=round_trip_ms,
+                server_total_us=total_us,
+                search_us=search_us,
+                error=b.get("error"),
+            ))
+        return out
 
     def close(self) -> None:
         self._client.close()

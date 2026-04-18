@@ -46,6 +46,11 @@ class QueryResponse:
     rate_us: int = 0
     route_us: int = 0
     resp_us: int = 0
+    # Populated by Client.query_batch() when a single sub-query failed
+    # (auth, index-not-loaded, malformed, backend error). None on success.
+    # Per-slot failures do NOT raise — the caller iterates and inspects
+    # `error` to decide whether to retry that slot.
+    error: str | None = None
 
     def __iter__(self):
         return iter(self.results)

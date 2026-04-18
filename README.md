@@ -262,6 +262,18 @@ index = client.get_index("index_id")
 client.delete_index("index_id")
 ```
 
+### Cross-Index Query Batch
+
+```python
+responses = client.query_batch([
+    {"index_id": "abc", "text":   "hello",       "top_k": 10},
+    {"index_id": "def", "vector": my_vec,        "top_k": 5, "include_vectors": True},
+    {"index_id": "ghi", "text":   "rate limit",  "top_k": 20, "mode": "hybrid"},
+])
+```
+
+See [Query Batch](#query-batch) below for the full feature surface, per-slot error semantics, and limits.
+
 ### Upsert Documents
 
 ```python
@@ -349,7 +361,14 @@ When numpy is available, the SDK automatically asks the server for vectors as ba
 
 ### Query Batch
 
-For workloads that run many queries back-to-back — training loops, evaluation suites, mining — use `query_batch` to amortize HTTP / TLS / router overhead across a single round-trip.
+For workloads that run many queries back-to-back — training loops, evaluation suites, mining — use batch queries to amortize HTTP / TLS / router overhead across a single round-trip. Two flavors:
+
+- `index.query_batch(queries)` — many queries, **one index**.
+- `client.query_batch(queries)` — many queries, **many indexes** in one request.
+
+Both return `list[QueryResponse]` in request order, both accept the full set of `query()` kwargs per entry, and both cap out at 4096 sub-queries per call.
+
+#### Single-index: `index.query_batch`
 
 ```python
 # Each entry takes the same keys as Index.query(...)
@@ -364,7 +383,7 @@ for q_idx, resp in enumerate(responses):
         print(q_idx, r.id, r.score)
 ```
 
-`query_batch` is **functionally identical to calling `query()` N times** — same server-side search path, same hybrid RRF fusion, same filter operators, same flags. The only difference is that many queries travel on one TCP connection in one JSON payload. You can mix dense and hybrid queries, different `top_k`, different `filter`, different `include_*` choices in the same batch.
+`index.query_batch` is **functionally identical to calling `query()` N times** — same server-side search path, same hybrid RRF fusion, same filter operators, same flags. The only difference is that many queries travel on one TCP connection in one JSON payload. You can mix dense and hybrid queries, different `top_k`, different `filter`, different `include_*` choices in the same batch.
 
 ```python
 # Every key that query() takes works inside query_batch() entries:
@@ -377,12 +396,70 @@ batch = [
 responses = index.query_batch(batch)
 ```
 
-Response ordering matches request ordering: `responses[i]` corresponds to `batch[i]`. Malformed entries come back as an empty result set rather than failing the whole batch — re-run those slots individually to get the 400-class error.
+#### Multi-index: `client.query_batch`
 
-Limits:
+`client.query_batch` takes a list where **each entry carries its own `index_id`** and fans out across every index it touches inside the router. Same feature surface as `Index.query()` per entry — text / vector, dense / hybrid, filters, `exact` / `phrase` / `fuzzy` / `alpha`, `include_text` / `include_metadata` / `include_vectors`.
 
-- Max 4096 queries per call.
-- Request body capped at 16 MiB (the router's inbound limit). With 1024-dim JSON-encoded query vectors, that's roughly 1500 queries per batch before you need to split. Bring-your-own-vector batches can stretch further by passing smaller `top_k` and fewer includes.
+```python
+# 256 queries scattered across many indexes in one round-trip.
+batch = []
+for idx_id, qvec in zip(index_ids, query_vectors):
+    batch.append({
+        "index_id":        idx_id,
+        "vector":          qvec,
+        "top_k":           10,
+        "mode":            "hybrid",
+        "include_vectors": True,
+    })
+responses = client.query_batch(batch)
+
+for sent, resp in zip(batch, responses):
+    if resp.error:              # per-slot failure — doesn't fail the batch
+        print(sent["index_id"], "FAILED:", resp.error)
+        continue
+    for r in resp:
+        print(sent["index_id"], r.id, r.score, r.vector[:4])
+```
+
+Text auto-embeds just like `query()` — the router looks up each index's model, coalesces all sub-queries that share a model into one embed call, and splices the resulting vectors back into their slots. A batch of 256 texts across 60 indexes that all use `bge-large-en-v1.5` costs **one** embed round-trip, not 256.
+
+```python
+batch = [
+    {"index_id": "abc-001", "text": "climate policy", "top_k": 10, "mode": "hybrid"},
+    {"index_id": "def-002", "text": "interest rates", "top_k": 5,  "mode": "dense"},
+    {"index_id": "ghi-003", "vector": pre_embedded,   "top_k": 20, "include_vectors": True},
+]
+responses = client.query_batch(batch)
+```
+
+Under the hood the router:
+
+1. Authenticates the API key once, then checks per-slot authorization against each `index_id`.
+2. Groups text sub-queries by the index's `model_id` and fires one parallel `/embed` call per distinct model.
+3. Groups every (index_id, host) pair into a bucket and fires one pod-side `/batch_query` per bucket — in parallel across up to 24 pods.
+4. Reassembles the response in original slot order.
+
+#### Per-slot errors (multi-index only)
+
+Multi-index batches never throw for one bad slot — the whole batch always comes back 200 if the envelope made it. Bad slots come back as an empty `results` list with `resp.error` set:
+
+| `resp.error`                                   | Meaning                                 |
+| ---------------------------------------------- | --------------------------------------- |
+| `"missing index_id"` / `"missing text or vector"` | Malformed entry                      |
+| `"invalid api key"` / `"api key not authorized for this index"` | Auth failure            |
+| `"index not loaded"`                           | Index is placing/migrating or unknown   |
+| `"embed failed"` / `"embed service not configured"` | Embed path failure                 |
+| `"backend error (status N)"`                   | Pod returned non-2xx                    |
+
+Single-index `index.query_batch` uses the same per-slot model — malformed sub-queries come back as empty result sets without `error` set.
+
+Response ordering always matches request ordering: `responses[i]` corresponds to `batch[i]`.
+
+#### Limits
+
+- Max 4096 queries per call (either flavor).
+- Request body capped at 16 MiB on the router's inbound side. With 1024-dim JSON-encoded query vectors, that's roughly 1500 queries per batch before you need to split; bring-your-own-vector batches at smaller `top_k` and fewer `include_*` can stretch further.
+- Multi-index: one batch can span up to 1024 distinct (index_id, host) buckets and up to 32 distinct embedding models.
 
 ### Optional: faster JSON parsing
 
