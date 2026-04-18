@@ -281,11 +281,19 @@ class Index:
         if text is None and vector is None:
             raise ValueError("Either text or vector must be provided")
 
+        import base64 as _b64
+
         payload: dict[str, Any] = {"top_k": top_k, "mode": mode}
         if text is not None:
             payload["text"] = text
+        wire_b64 = False
         if vector is not None:
-            payload["vector"] = vector
+            if _HAS_NUMPY:
+                arr = _np.asarray(vector, dtype=_np.float32)
+                payload["vector"] = _b64.b64encode(arr.tobytes()).decode("ascii")
+                wire_b64 = True
+            else:
+                payload["vector"] = list(vector)
         if filter is not None:
             payload["filter"] = filter
         if exact:
@@ -308,7 +316,9 @@ class Index:
             # outside the GIL — fixes the 20x throughput cliff we hit at
             # high concurrency when include_vectors=True.
             if _HAS_NUMPY:
-                payload["vector_format"] = "base64"
+                wire_b64 = True
+        if wire_b64:
+            payload["vector_format"] = "base64"
 
         t0 = time.perf_counter()
         resp = self._client._request(

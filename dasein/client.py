@@ -36,7 +36,7 @@ except ImportError:
 DEFAULT_BASE_URL = "https://api.daseinai.ai"
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_RETRIES = 3
-__version__ = "0.4.3"
+__version__ = "0.4.4"
 
 
 class Client:
@@ -286,6 +286,8 @@ class Client:
         if len(queries) > 4096:
             raise ValueError("query_batch: max 4096 queries per call")
 
+        import base64 as _b64
+
         norm: list[dict[str, Any]] = []
         any_wants_vec = False
         for q in queries:
@@ -295,11 +297,15 @@ class Client:
                 raise ValueError("query_batch: each query must include 'index_id'")
             entry: dict[str, Any] = {"index_id": q["index_id"]}
 
+            wire_b64 = False
             v = q.get("vector")
             if v is not None:
-                if _HAS_NUMPY and isinstance(v, _np.ndarray):
-                    v = v.astype(_np.float32, copy=False).tolist()
-                entry["vector"] = v
+                if _HAS_NUMPY:
+                    arr = _np.asarray(v, dtype=_np.float32)
+                    entry["vector"] = _b64.b64encode(arr.tobytes()).decode("ascii")
+                    wire_b64 = True
+                else:
+                    entry["vector"] = list(v)
 
             for key in (
                 "text", "top_k", "mode", "filter",
@@ -312,7 +318,9 @@ class Client:
             if entry.get("include_vectors"):
                 any_wants_vec = True
                 if _HAS_NUMPY:
-                    entry["vector_format"] = "base64"
+                    wire_b64 = True
+            if wire_b64:
+                entry["vector_format"] = "base64"
             norm.append(entry)
 
         payload = {"queries": norm}
