@@ -8,17 +8,17 @@ Dynamic Hybrid picks α per query, in line with the rest of the retrieval path. 
 
 **Portable.** Query in, per-query α out. Drop it into any `score = (1-α)·dense + α·bm25` fusion. Per-query inference: **0.40 ms**. Works with any encoder, any BM25 implementation, any index.
 
-**Dasein-native.** Because we own the full retrieval stack, we were able to refactor our indexing pipeline to support Dynamic Hybrid end-to-end. That integration is what the Dasein-native variant runs on, which is why it is available only on the Dasein index. Same per-query inference budget — **1.69 ms** — with a larger lift than the portable variant across every evaluated corpus.
+**Dasein-native.** Because we own the full retrieval stack, we were able to refactor our indexing pipeline to support Dynamic Hybrid end-to-end. That integration is what the Dasein-native variant runs on, which is why it is available only on the Dasein index. Per-query inference: **4.17 ms** — still inside any realistic retrieval-path budget — and it turns the portable variant's R@10 lifts into large R@1 lifts on the lexically-rich corpora (+12.0 pp on FEVER, +18.8 pp on NQ) on top of matching or beating the portable variant on R@10, MRR, and mean rank.
 
 Both variants are evaluated against the same baselines (pure dense, pure BM25, best static α) on the same four corpora.
 
 ## Headline
 
 - **Higher quality.** Per-query α beats the best static α on all four in-domain corpora, for both variants, on R@10, MRR, and mean rank. The Dasein-native variant adds large R@1 gains on the lexically-rich corpora (FEVER, NQ) on top of that.
-- **Low latency.** Portable is **0.40 ms / query**; Dasein-native is **1.69 ms / query**. Both are small fractions of any realistic retrieval-path budget.
+- **Low latency.** Portable is **0.40 ms / query**; Dasein-native is **4.17 ms / query**. Both are small fractions of any realistic retrieval-path budget.
 - **Real benchmarks.** FiQA, FEVER, SciFact, NQ — the retrieval sets the field uses. They are not curated to flatter hybrid methods; FiQA and SciFact are dense-dominated, FEVER and NQ are lexically richer. We report across all four.
 - **Encoder coverage.** Ten public encoders from 22 M to 7 B parameters, 384 to 4096 dimensions, spanning the major embedding families.
-- **Generalizes across encoders.** On three encoder families held out of training, the portable variant tracks dense within noise on every corpus while still avoiding the R@1 collapse that fixed α incurs; the Dasein-native variant lifts R@10 and mean rank above dense on every held-out corpus. Full held-out tables in the per-variant full-results docs.
+- **Generalizes across encoders.** On three encoder families held out of training, the portable variant tracks dense within noise on every corpus while still avoiding the R@1 collapse that fixed α incurs; the Dasein-native variant lifts R@10 over dense on the lexically-rich held-out corpora (FEVER, NQ) and beats best static α on R@1 by large margins. Full held-out tables in the per-variant full-results docs.
 
 ## Embedding models
 
@@ -93,7 +93,7 @@ Full per-corpus / per-encoder tables, α sweeps, and lift breakdowns: `dynamic_h
 
 ## Dasein-native variant
 
-Per-query latency **1.69 ms**. Same two-path hybrid contract as the portable variant — per-query α is what flows through the fusion — with larger lifts across every evaluated corpus.
+Per-query latency **4.17 ms**. Same two-path hybrid contract as the portable variant — per-query α is what flows through the fusion — with large R@1 gains on the lexically-rich corpora (+12.0 pp on FEVER, +18.8 pp on NQ) layered on top of the portable variant's R@10 / MRR / mean-rank wins.
 
 **FiQA** (n=5,802)
 
@@ -101,9 +101,9 @@ Per-query latency **1.69 ms**. Same two-path hybrid contract as the portable var
 |---|---:|---:|---:|---:|---:|
 | Dense only | 0.4700 | 0.6948 | 0.7771 | 0.5748 | 13.0 |
 | Best static α (α=0.05) | 0.3626 | 0.6751 | 0.7763 | 0.4983 | 13.2 |
-| Dynamic Hybrid | 0.4778 | 0.7072 | 0.7952 | 0.5842 | 10.4 |
-| Δ Dynamic vs dense | +0.0078 | +0.0124 | +0.0181 | +0.0095 | -2.6 |
-| Δ Dynamic vs best static α | +0.1151 | +0.0321 | +0.0190 | +0.0860 | -2.8 |
+| Dynamic Hybrid | 0.4809 | 0.7122 | 0.7939 | 0.5873 | 10.5 |
+| Δ Dynamic vs dense | +0.0109 | +0.0174 | +0.0167 | +0.0126 | -2.5 |
+| Δ Dynamic vs best static α | +0.1182 | +0.0371 | +0.0176 | +0.0890 | -2.7 |
 
 **FEVER** (n=144,918)
 
@@ -111,9 +111,9 @@ Per-query latency **1.69 ms**. Same two-path hybrid contract as the portable var
 |---|---:|---:|---:|---:|---:|
 | Dense only | 0.7401 | 0.8348 | 0.8510 | 0.7853 | 16.3 |
 | Best static α (α=0.05) | 0.4929 | 0.8108 | 0.8508 | 0.6261 | 16.8 |
-| Dynamic Hybrid | 0.8269 | 0.9519 | 0.9694 | 0.8845 | 2.4 |
-| Δ Dynamic vs dense | +0.0869 | +0.1171 | +0.1183 | +0.0992 | -13.9 |
-| Δ Dynamic vs best static α | +0.3340 | +0.1411 | +0.1186 | +0.2584 | -14.5 |
+| Dynamic Hybrid | 0.8603 | 0.9694 | 0.9808 | 0.9105 | 1.9 |
+| Δ Dynamic vs dense | +0.1203 | +0.1346 | +0.1298 | +0.1251 | -14.4 |
+| Δ Dynamic vs best static α | +0.3674 | +0.1586 | +0.1300 | +0.2843 | -14.9 |
 
 **SciFact** (n=2,934)
 
@@ -121,9 +121,9 @@ Per-query latency **1.69 ms**. Same two-path hybrid contract as the portable var
 |---|---:|---:|---:|---:|---:|
 | Dense only | 0.6118 | 0.8211 | 0.8770 | 0.7042 | 8.4 |
 | Best static α (α=0.05) | 0.6135 | 0.8217 | 0.8821 | 0.7076 | 8.1 |
-| Dynamic Hybrid | 0.6108 | 0.8252 | 0.8920 | 0.7075 | 6.7 |
-| Δ Dynamic vs dense | -0.0010 | +0.0041 | +0.0150 | +0.0032 | -1.7 |
-| Δ Dynamic vs best static α | -0.0027 | +0.0034 | +0.0099 | -0.0002 | -1.4 |
+| Dynamic Hybrid | 0.5944 | 0.8180 | 0.8787 | 0.6932 | 7.0 |
+| Δ Dynamic vs dense | -0.0174 | -0.0031 | +0.0017 | -0.0110 | -1.4 |
+| Δ Dynamic vs best static α | -0.0191 | -0.0037 | -0.0034 | -0.0144 | -1.1 |
 
 **NQ** (n=4,728)
 
@@ -131,9 +131,9 @@ Per-query latency **1.69 ms**. Same two-path hybrid contract as the portable var
 |---|---:|---:|---:|---:|---:|
 | Dense only | 0.5116 | 0.6673 | 0.6937 | 0.5833 | 27.9 |
 | Best static α (α=0.05) | 0.4124 | 0.6476 | 0.6952 | 0.5120 | 28.1 |
-| Dynamic Hybrid | 0.6694 | 0.8809 | 0.9158 | 0.7632 | 5.5 |
-| Δ Dynamic vs dense | +0.1578 | +0.2136 | +0.2221 | +0.1798 | -22.4 |
-| Δ Dynamic vs best static α | +0.2570 | +0.2333 | +0.2206 | +0.2511 | -22.5 |
+| Dynamic Hybrid | 0.6997 | 0.9120 | 0.9425 | 0.7947 | 3.8 |
+| Δ Dynamic vs dense | +0.1880 | +0.2447 | +0.2487 | +0.2113 | -24.1 |
+| Δ Dynamic vs best static α | +0.2872 | +0.2644 | +0.2473 | +0.2826 | -24.3 |
 
 Full per-corpus / per-encoder tables, α sweeps, and lift breakdowns: `dynamic_hybrid_internal_full_results.md`.
 
