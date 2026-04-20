@@ -250,6 +250,7 @@ class Index:
         include_text: bool = False,
         include_metadata: bool = False,
         include_vectors: bool = False,
+        dynamic_hybrid: bool = False,
     ) -> QueryResponse:
         """
         Query the index.
@@ -274,12 +275,19 @@ class Index:
             include_text: Return stored text in results (requires SSD read, default False).
             include_metadata: Return stored metadata in results (requires SSD read, default False).
             include_vectors: Return reconstructed approximate vectors (from RAM, default False).
+            dynamic_hybrid: Managed adaptive fusion for hybrid indexes. When
+                True, Dasein picks the dense/BM25 balance per-query and
+                returns the ranking directly — no ``alpha`` to tune, no
+                client-side fusion. Only valid on hybrid indexes, and
+                ``top_k`` must be <= 100.
 
         Returns:
             QueryResponse (iterable like a list of QueryResult, with timing attrs)
         """
         if text is None and vector is None:
             raise ValueError("Either text or vector must be provided")
+        if dynamic_hybrid and top_k > 100:
+            raise ValueError("dynamic_hybrid requires top_k <= 100")
 
         import base64 as _b64
 
@@ -308,6 +316,8 @@ class Index:
             payload["include_text"] = True
         if include_metadata:
             payload["include_metadata"] = True
+        if dynamic_hybrid:
+            payload["dynamic_hybrid"] = True
         if include_vectors:
             payload["include_vectors"] = True
             # Ask the server for base64-encoded fp32 vectors when we can

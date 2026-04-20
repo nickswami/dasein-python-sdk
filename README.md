@@ -91,6 +91,37 @@ results = index.query("AAPL earnings", top_k=10, mode="hybrid", alpha=0.7)  # le
 
 Hybrid mode is strongest on queries with specific keywords, entity names, or codes where pure semantic search loses signal. Dense mode is better for abstract, conceptual queries. You choose per query. The keyword features (`exact`, `phrase`, `fuzzy`) refine hybrid results — use them when you need precise keyword control. The `alpha` parameter lets you tune the balance between dense and BM25 ranking in the fusion step.
 
+### Dynamic hybrid — let Dasein pick the balance
+
+Tuning `alpha` per query is tedious and fragile. On hybrid indexes you can
+hand the decision off to Dasein:
+
+```python
+results = index.query("AAPL earnings Q3 2025",
+                      top_k=10, mode="hybrid", dynamic_hybrid=True)
+```
+
+With `dynamic_hybrid=True`, Dasein picks the dense/BM25 balance for each
+query individually and returns the final ranking directly — `alpha` is
+ignored. Only available on hybrid indexes. `top_k` must be `<= 100`.
+
+No extra setup. No retraining on your data. Works across encoders.
+
+### Managed fusion weight for your own stack — `client.predict_alpha`
+
+If you run your own dense + BM25 pipeline and just want a better per-query
+fusion weight, call Dasein directly — no index required:
+
+```python
+alpha = client.predict_alpha("who founded apple?")
+# blend your own rankings at this alpha
+fused = rrf_fuse(my_dense_hits, my_bm25_hits, alpha=alpha)
+```
+
+Returns a `float` in `[0.0, 1.0]` (0 = all dense, 1 = all BM25). Free
+plans get 1,000 calls per month; paid hybrid plans are unlimited. Pass an
+already-embedded `query_vector` if you have one to skip the embed cost.
+
 ## Metadata
 
 Attach key-value metadata to documents for filtering at query time. Values can be strings, integers, or floats.
@@ -180,6 +211,8 @@ while True:
 
 **Hybrid search** — Switch between dense and hybrid retrieval per query. No reindexing, no separate BM25 infrastructure.
 
+**Dynamic hybrid** — Let Dasein pick the dense/BM25 balance per query on hybrid indexes (`dynamic_hybrid=True`), or call `client.predict_alpha(text)` to get the same weight for your own hybrid stack. Works across encoders, no retraining required.
+
 **Metadata filtering** — Attach metadata to documents and filter at query time with operators like `$in`, `$ne`, `$gte`, `$lte`, and `$or`. True pre-filters with no recall penalty.
 
 **Automatic retries** — The SDK retries with exponential backoff:
@@ -262,6 +295,21 @@ index = client.get_index("index_id")
 client.delete_index("index_id")
 ```
 
+### Predict Alpha (managed fusion weight)
+
+```python
+alpha = client.predict_alpha(
+    text="who founded apple?",
+    query_vector=None,    # optional — pre-embedded dense vector
+    model_id=None,        # optional — embedding model if query_vector is None
+)
+```
+
+Returns a `float` in `[0.0, 1.0]` to use as the dense/BM25 blend for your
+own hybrid stack. No Dasein index required. See
+[Managed fusion weight](#managed-fusion-weight-for-your-own-stack--clientpredict_alpha)
+for usage and quotas.
+
 ### Cross-Index Query Batch
 
 ```python
@@ -314,6 +362,7 @@ results = index.query(
     phrase=False,                # exact phrase matching (hybrid only)
     fuzzy=False,                 # typo-tolerant matching (hybrid only)
     alpha=0.5,                   # dense vs BM25 balance (0=dense, 1=BM25)
+    dynamic_hybrid=False,        # let Dasein pick alpha per query (hybrid only, top_k<=100)
     include_text=False,          # return stored text (off by default)
     include_metadata=False,      # return stored metadata (off by default)
     include_vectors=False,       # return approximate vectors (off by default)

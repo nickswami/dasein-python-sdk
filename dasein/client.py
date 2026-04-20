@@ -36,7 +36,7 @@ except ImportError:
 DEFAULT_BASE_URL = "https://api.daseinai.ai"
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_RETRIES = 3
-__version__ = "0.4.4"
+__version__ = "0.4.5"
 
 
 class Client:
@@ -233,6 +233,55 @@ class Client:
     def delete_index(self, index_id: str) -> None:
         """Delete an index permanently."""
         self._request("DELETE", f"/indexes/{index_id}")
+
+    def predict_alpha(
+        self,
+        text: str,
+        query_vector: list[float] | None = None,
+        model_id: str | None = None,
+    ) -> float:
+        """Managed per-query hybrid-fusion weight.
+
+        Call this from *any* search stack — you don't need a Dasein index.
+        Dasein returns ``alpha ∈ [0.0, 1.0]`` for the given query: blend
+        your own dense and BM25 rankings at that weight and ship the fused
+        list.
+
+        - 0.0  →  use only your dense ranking
+        - 1.0  →  use only your BM25 ranking
+        - 0.5  →  equal blend
+
+        Typical RRF fusion::
+
+            alpha = dasein.predict_alpha("who founded apple?")
+            fused = rrf_fuse(dense_hits, bm25_hits, alpha=alpha)
+
+        Args:
+            text: The raw query text.
+            query_vector: Optional pre-embedded dense query vector. If not
+                supplied, Dasein will embed ``text`` for you (counts against
+                your embed token quota).
+            model_id: Optional override for the embedding model when
+                ``query_vector`` is not supplied. Defaults to Dasein's
+                standard encoder.
+
+        Returns:
+            float in [0.0, 1.0].
+
+        Quota:
+            Free plans: 1,000 calls per month.
+            Paid hybrid plans: unlimited.
+        """
+        if not text or not text.strip():
+            raise ValueError("text must be a non-empty string")
+        payload: dict[str, Any] = {"text": text}
+        if query_vector is not None:
+            payload["query_vector"] = list(query_vector)
+        if model_id is not None:
+            payload["model_id"] = model_id
+        resp = self._request("POST", "/v1/predict_alpha", json=payload)
+        data = resp.json()
+        return float(data["alpha"])
 
     def query_batch(
         self,
