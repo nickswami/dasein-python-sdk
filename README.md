@@ -4,8 +4,8 @@
 
 # Dasein
 
-**The managed vector index that compresses 12×, queries 10× faster, and still hits 99.96% of fp32 recall.**
-Hybrid dense + BM25 • Per-query dynamic α fusion • Zero embedding infrastructure
+**Higher-quality retrieval than static hybrid — at 12× smaller and 10× faster than typical production.**
+Per-query dynamic α beats best-static-α on every benchmark we've tested • compression preserves 99.96% of fp32 recall • Zero embedding infrastructure
 
 [![PyPI](https://img.shields.io/pypi/v/dasein-ai.svg?color=4b3ed6&label=pypi)](https://pypi.org/project/dasein-ai/)
 [![Python](https://img.shields.io/pypi/pyversions/dasein-ai.svg?color=4b3ed6)](https://pypi.org/project/dasein-ai/)
