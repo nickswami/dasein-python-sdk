@@ -110,17 +110,27 @@ No extra setup. No retraining on your data. Works across encoders.
 ### Managed fusion weight for your own stack — `client.predict_alpha`
 
 If you run your own dense + BM25 pipeline and just want a better per-query
-fusion weight, call Dasein directly — no index required:
+fusion weight, call Dasein directly — no index required. **Pass the same
+dense query vector you're about to retrieve with**, so the alpha matches
+your encoder's geometry:
 
 ```python
-alpha = client.predict_alpha("who founded apple?")
+# embed the query in YOUR encoder's space (whatever you already use)
+qvec = my_encoder.encode("who founded apple?")
+
+alpha = client.predict_alpha("who founded apple?", query_vector=qvec)
 # blend your own rankings at this alpha
 fused = rrf_fuse(my_dense_hits, my_bm25_hits, alpha=alpha)
 ```
 
-Returns a `float` in `[0.0, 1.0]` (0 = all dense, 1 = all BM25). Free
-plans get 1,000 calls per month; paid hybrid plans are unlimited. Pass an
-already-embedded `query_vector` if you have one to skip the embed cost.
+Returns a `float` in `[0.0, 1.0]` (0 = all dense, 1 = all BM25). Works
+across encoders — just pass the vector from whichever encoder you use.
+
+`query_vector` is strongly recommended. If you omit it, Dasein will embed
+`text` with its default model and return an alpha tied to *that* model's
+geometry, which will not line up with your own retriever.
+
+Free plans: 1,000 calls per month. Paid hybrid plans: unlimited.
 
 ## Metadata
 
@@ -211,7 +221,7 @@ while True:
 
 **Hybrid search** — Switch between dense and hybrid retrieval per query. No reindexing, no separate BM25 infrastructure.
 
-**Dynamic hybrid** — Let Dasein pick the dense/BM25 balance per query on hybrid indexes (`dynamic_hybrid=True`), or call `client.predict_alpha(text)` to get the same weight for your own hybrid stack. Works across encoders, no retraining required.
+**Dynamic hybrid** — Let Dasein pick the dense/BM25 balance per query on hybrid indexes (`dynamic_hybrid=True`), or call `client.predict_alpha(text, query_vector=...)` to get the same weight for your own hybrid stack. Works across encoders, no retraining required.
 
 **Metadata filtering** — Attach metadata to documents and filter at query time with operators like `$in`, `$ne`, `$gte`, `$lte`, and `$or`. True pre-filters with no recall penalty.
 
@@ -300,14 +310,19 @@ client.delete_index("index_id")
 ```python
 alpha = client.predict_alpha(
     text="who founded apple?",
-    query_vector=None,    # optional — pre-embedded dense vector
-    model_id=None,        # optional — embedding model if query_vector is None
+    query_vector=my_dense_vec,  # strongly recommended: your encoder's output
+    model_id=None,              # used to embed `text` ONLY if query_vector is None
 )
 ```
 
 Returns a `float` in `[0.0, 1.0]` to use as the dense/BM25 blend for your
-own hybrid stack. No Dasein index required. See
-[Managed fusion weight](#managed-fusion-weight-for-your-own-stack--clientpredict_alpha)
+own hybrid stack. No Dasein index required.
+
+**Pass your own `query_vector`** so the returned alpha is valid for your
+retriever. If omitted, Dasein will embed `text` with its default encoder
+and the alpha will only be meaningful for that encoder's geometry.
+
+See [Managed fusion weight](#managed-fusion-weight-for-your-own-stack--clientpredict_alpha)
 for usage and quotas.
 
 ### Cross-Index Query Batch

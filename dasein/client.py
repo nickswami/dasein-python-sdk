@@ -36,7 +36,7 @@ except ImportError:
 DEFAULT_BASE_URL = "https://api.daseinai.ai"
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_RETRIES = 3
-__version__ = "0.4.5"
+__version__ = "0.4.6"
 
 
 class Client:
@@ -251,19 +251,24 @@ class Client:
         - 1.0  →  use only your BM25 ranking
         - 0.5  →  equal blend
 
-        Typical RRF fusion::
+        Typical usage::
 
-            alpha = dasein.predict_alpha("who founded apple?")
+            qvec = my_encoder.encode("who founded apple?")
+            alpha = client.predict_alpha("who founded apple?", query_vector=qvec)
             fused = rrf_fuse(dense_hits, bm25_hits, alpha=alpha)
 
         Args:
             text: The raw query text.
-            query_vector: Optional pre-embedded dense query vector. If not
-                supplied, Dasein will embed ``text`` for you (counts against
-                your embed token quota).
+            query_vector: The dense query embedding from YOUR encoder.
+                Strongly recommended — the returned alpha is tied to the
+                geometry of this vector, so for alpha to be valid for
+                your retriever you must pass the same vector you're about
+                to retrieve with. If omitted, Dasein embeds ``text`` with
+                its default model and the alpha will only be meaningful
+                for that model's geometry. Counts against your embed
+                token quota when omitted.
             model_id: Optional override for the embedding model when
-                ``query_vector`` is not supplied. Defaults to Dasein's
-                standard encoder.
+                ``query_vector`` is not supplied. Ignored otherwise.
 
         Returns:
             float in [0.0, 1.0].
