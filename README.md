@@ -1,10 +1,27 @@
+<div align="center">
+
+<img src="assets/dasein-logo.png" alt="Dasein" width="180" />
+
 # Dasein
+
+**The managed vector index that compresses 12×, queries 10× faster, and still hits 99.96% of fp32 recall.**
+Hybrid dense + BM25 • Per-query dynamic α fusion • Zero embedding infrastructure
+
+[![PyPI](https://img.shields.io/pypi/v/dasein-ai.svg?color=4b3ed6&label=pypi)](https://pypi.org/project/dasein-ai/)
+[![Python](https://img.shields.io/pypi/pyversions/dasein-ai.svg?color=4b3ed6)](https://pypi.org/project/dasein-ai/)
+[![License](https://img.shields.io/badge/license-MIT-4b3ed6.svg)](#license)
+[![Benchmarks](https://img.shields.io/badge/VectorDBBench-results-4b3ed6)](https://results.daseinai.ai/results)
+[![Docs](https://img.shields.io/badge/docs-daseinai.ai-4b3ed6)](https://www.daseinai.ai/)
+
+[Quick Start](#quick-start) • [Hybrid Search](#hybrid-search) • [Dynamic Hybrid](#dynamic-hybrid--let-dasein-pick-the-balance) • [Query Batch](#query-batch) • [API Reference](#api-reference) • [Benchmarks](https://results.daseinai.ai/results) • [Dynamic Hybrid Results](dynamic_hybrid_results/dynamic_hybrid_summary.md)
+
+</div>
+
+---
 
 Python SDK for the [Dasein](https://www.daseinai.ai/) managed vector index service.
 
-Low-latency vector search with hybrid retrieval. Send raw text and get back ranked results — Dasein handles embedding, indexing, and serving.
-
-See our <a href="https://results.daseinai.ai/results" target="_blank">VectorDBBench results</a> for latency and recall benchmarks.
+Send raw text in, get ranked results out. Dasein runs the embedding, compression, HNSW, BM25, and fusion for you — you call one method. Our proprietary compression is **12× smaller than fp32** while preserving **99.96%** of recall, which is what unlocks the throughput edge in production.
 
 ## Install
 
