@@ -21,7 +21,13 @@ Hybrid dense + BM25 • Per-query dynamic α fusion • Zero embedding infrastru
 
 Python SDK for the [Dasein](https://www.daseinai.ai/) managed vector index service.
 
-Send raw text in, get ranked results out. Dasein runs the embedding, compression, HNSW, BM25, and fusion for you — you call one method. Our proprietary compression is **12× smaller than fp32** while preserving **99.96%** of recall, which is what unlocks the throughput edge in production.
+Send raw text in, get ranked results out. One method call — Dasein runs the embedding, compression, HNSW, BM25, and fusion.
+
+**Higher quality.** [Dynamic Hybrid](dynamic_hybrid_results/dynamic_hybrid_summary.md) picks the dense/BM25 fusion α **per query** instead of the industry-standard single fixed α. It beats best-static-α across FiQA, FEVER, SciFact, and NQ on R@10, MRR, and mean rank — without the R@1 collapse that fixed α always pays. On FEVER the Dasein-native variant lifts R@10 from **0.85 → 0.97**; on NQ from **0.69 → 0.92**. Works across any encoder (MiniLM 22M to E5-Mistral 7B).
+
+**Smaller.** Proprietary compression: **12× smaller than fp32** while preserving **99.96%** of recall. Full fp32-quality index fits in an order of magnitude less RAM — no SSD on the hot path.
+
+**Faster.** **10× faster queries** than typical production setups in our [VectorDBBench runs](https://results.daseinai.ai/results). The compression *is* the speedup — smaller footprint keeps more of your index hot.
 
 ## Install
 
