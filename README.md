@@ -10,10 +10,11 @@ Hybrid dense + BM25 • Per-query dynamic α fusion • Zero embedding infrastru
 [![PyPI](https://img.shields.io/pypi/v/dasein-ai.svg?color=4b3ed6&label=pypi)](https://pypi.org/project/dasein-ai/)
 [![Python](https://img.shields.io/pypi/pyversions/dasein-ai.svg?color=4b3ed6)](https://pypi.org/project/dasein-ai/)
 [![License](https://img.shields.io/badge/license-MIT-4b3ed6.svg)](#license)
+[![Live Demo](https://img.shields.io/badge/demo-try%20it%20live-4b3ed6)](https://demo.daseinai.ai)
 [![Benchmarks](https://img.shields.io/badge/VectorDBBench-results-4b3ed6)](https://results.daseinai.ai/results)
 [![Docs](https://img.shields.io/badge/docs-daseinai.ai-4b3ed6)](https://www.daseinai.ai/)
 
-[Quick Start](#quick-start) • [Hybrid Search](#hybrid-search) • [Dynamic Hybrid](#dynamic-hybrid--let-dasein-pick-the-balance) • [Query Batch](#query-batch) • [API Reference](#api-reference) • [Benchmarks](https://results.daseinai.ai/results) • [Dynamic Hybrid Results](dynamic_hybrid_results/dynamic_hybrid_summary.md)
+[Live Demo](https://demo.daseinai.ai) • [Quick Start](#quick-start) • [Hybrid Search](#hybrid-search) • [Dynamic Hybrid](#dynamic-hybrid--let-dasein-pick-the-balance) • [Query Batch](#query-batch) • [API Reference](#api-reference) • [Benchmarks](https://results.daseinai.ai/results) • [Dynamic Hybrid Results](dynamic_hybrid_results/dynamic_hybrid_summary.md)
 
 </div>
 
