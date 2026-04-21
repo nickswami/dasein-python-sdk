@@ -277,7 +277,7 @@ Models trained with Matryoshka Representation Learning (MRL) can be truncated to
 index = client.create_index("my-docs", index_type="hybrid", model="bge-large-en-v1.5", dim=256)
 ```
 
-Embeddings are generated at full dimension and truncated + L2-renormalized before indexing. Queries are truncated the same way automatically. The first build for a truncated dimension uses an initial one-time build (slightly slower) since pretrained models are only available for native dimensions.
+Embeddings are generated at full dimension and truncated + L2-renormalized before indexing. Queries are truncated the same way automatically. The first build at a non-native dimension takes slightly longer than a build at the model's native dimension.
 
 ## API Reference
 
@@ -441,7 +441,7 @@ for r in results:
     print(r.id, r.score, len(r.vector))
 ```
 
-Text and metadata are stored on SSD and only fetched when you opt in. Vectors are reconstructed from compact codes already in RAM — no disk I/O. The default query path is entirely RAM-resident.
+Text and metadata are stored on SSD and only fetched when you opt in. Vectors are reconstructed from a compact in-RAM representation — no disk I/O. The default query path is entirely RAM-resident.
 
 #### Wire format for `include_vectors`
 
