@@ -517,5 +517,289 @@ class Index:
         """Get current index status and metadata."""
         return self._client.index_info(self.index_id)
 
+    def multihop_query(
+        self,
+        question: str,
+        top_k: int = 50,
+        encoder_model_id: str | None = None,
+        min_hops: int | None = None,
+        max_hops: int | None = None,
+        r_seed: int | None = None,
+        verbose: bool = True,
+    ) -> dict:
+        """Run an end-to-end managed multi-hop search against this index.
+
+        Dasein hosts the encoder, the hybrid index, and the multi-hop
+        controller. The controller runs MIN_HOPS=3 to MAX_HOPS=5 hops
+        of dense+BM25 retrieval, intelligent reranking, and learned
+        sub-query generation; final ranking is the rerank ordering of
+        the last hop.
+
+        Returns a dict with `final_results`, `n_hops`, and `hops`
+        (per-hop sub_query_text + rerank_ids/scores when verbose=True),
+        plus per-stage timings.
+        """
+        payload: dict[str, Any] = {
+            "question": question,
+            "top_k": top_k,
+            "verbose": verbose,
+        }
+        if encoder_model_id is not None:
+            payload["encoder_model_id"] = encoder_model_id
+        if min_hops is not None:
+            payload["min_hops"] = min_hops
+        if max_hops is not None:
+            payload["max_hops"] = max_hops
+        if r_seed is not None:
+            payload["r_seed"] = r_seed
+        resp = self._client._request(
+            "POST",
+            f"/indexes/{self.index_id}/multihop/query",
+            json=payload,
+            timeout=120.0,
+        )
+        return _resp_json(resp)
+
+    def multihop_query_stream(
+        self,
+        question: str,
+        top_k: int = 50,
+        encoder_model_id: str | None = None,
+        min_hops: int | None = None,
+        max_hops: int | None = None,
+        r_seed: int | None = None,
+        verbose: bool = True,
+        timeout: float = 180.0,
+    ):
+        """Stream managed multi-hop search events as they happen.
+
+        Yields a sequence of dicts. Event kinds (in field ``event``):
+
+        * ``open``   — session metadata (one event)
+        * ``hop``    — emitted as each hop completes; contains
+                       ``hop``, ``sub_query_text``, ``rerank_ids``,
+                       ``rerank_scores``, ``timings_ms``, ``terminated``
+        * ``final``  — final aggregated payload (same shape as
+                       :py:meth:`multihop_query`); always last
+        * ``error``  — fatal error; stream then closes
+
+        Use this when you want to render hops live (e.g. in a UI) instead
+        of waiting for the full multi-hop run to finish::
+
+            for ev in idx.multihop_query_stream("your question..."):
+                if ev["event"] == "hop":
+                    print(ev["hop"], ev["sub_query_text"])
+                elif ev["event"] == "final":
+                    final_ids = ev["final_ids"]
+        """
+        import httpx
+
+        payload: dict[str, Any] = {
+            "question": question,
+            "top_k": top_k,
+            "verbose": verbose,
+        }
+        if encoder_model_id is not None:
+            payload["encoder_model_id"] = encoder_model_id
+        if min_hops is not None:
+            payload["min_hops"] = min_hops
+        if max_hops is not None:
+            payload["max_hops"] = max_hops
+        if r_seed is not None:
+            payload["r_seed"] = r_seed
+
+        url = f"{self._client.base_url}/indexes/{self.index_id}/multihop/query/stream"
+        headers = {
+            "X-API-Key": self._client.api_key,
+            "Authorization": f"Bearer {self._client.api_key}",
+            "Accept": "text/event-stream",
+        }
+        with httpx.Client(timeout=httpx.Timeout(timeout, read=timeout)) as cli:
+            with cli.stream("POST", url, headers=headers, json=payload) as resp:
+                if resp.status_code >= 400:
+                    body = resp.read().decode("utf-8", errors="replace")
+                    raise DaseinError(f"HTTP {resp.status_code}: {body[:800]}")
+                buf: list[str] = []
+                for line in resp.iter_lines():
+                    if line == "" or line is None:
+                        if not buf:
+                            continue
+                        block = "\n".join(buf)
+                        buf = []
+                        for ln in block.split("\n"):
+                            if ln.startswith("data:"):
+                                data = ln[5:].lstrip()
+                                if not data:
+                                    continue
+                                try:
+                                    ev = _loads(data)
+                                except Exception:
+                                    continue
+                                yield ev
+                                if ev.get("event") in ("final", "error"):
+                                    return
+                    else:
+                        buf.append(line)
+                if buf:
+                    for ln in buf:
+                        if ln.startswith("data:"):
+                            data = ln[5:].lstrip()
+                            if data:
+                                try:
+                                    yield _loads(data)
+                                except Exception:
+                                    pass
+
+    def multihop_byoe(
+        self,
+        question: str,
+        encoder_callback,
+        top_k: int = 50,
+        min_hops: int | None = None,
+        max_hops: int | None = None,
+        r_seed: int | None = None,
+    ) -> dict:
+        """Run a BYOE multi-hop search against this Dasein-hosted index.
+
+        Dasein hosts the hybrid index and the controller, but the
+        customer supplies query embeddings via ``encoder_callback``
+        (a callable: ``str -> list[float] | np.ndarray``). Dasein's
+        BM25 lane and reranker are fully active.
+
+        Each hop the SDK calls ``encoder_callback(next_query_text)``
+        and POSTs the resulting vector to ``/multihop/session/{sid}/step``.
+        """
+        if not callable(encoder_callback):
+            raise ValueError("encoder_callback must be a callable str -> vector")
+        open_payload: dict[str, Any] = {
+            "question": question,
+            "mode": "byoe",
+        }
+        if min_hops is not None:
+            open_payload["min_hops"] = min_hops
+        if max_hops is not None:
+            open_payload["max_hops"] = max_hops
+        if r_seed is not None:
+            open_payload["r_seed"] = r_seed
+        resp = self._client._request(
+            "POST",
+            f"/indexes/{self.index_id}/multihop/session",
+            json=open_payload,
+            timeout=60.0,
+        )
+        opened = _resp_json(resp)
+        sid = opened["session_id"]
+
+        try:
+            next_q = opened.get("first_query_text") or question
+            while True:
+                vec = encoder_callback(next_q)
+                if _HAS_NUMPY:
+                    vec = _np.asarray(vec, dtype=_np.float32).tolist()
+                else:
+                    vec = list(vec)
+                step_payload = {"vector": vec, "top_k": top_k}
+                resp = self._client._request(
+                    "POST",
+                    f"/multihop/session/{sid}/step",
+                    json=step_payload,
+                    timeout=60.0,
+                )
+                step = _resp_json(resp)
+                if step.get("terminated"):
+                    break
+                next_q = step.get("next_query_text")
+                if not next_q:
+                    break
+            resp = self._client._request(
+                "POST",
+                f"/multihop/session/{sid}/finish",
+                json={},
+                timeout=30.0,
+            )
+            return _resp_json(resp)
+        except Exception:
+            try:
+                self._client._request(
+                    "POST",
+                    f"/multihop/session/{sid}/finish",
+                    json={},
+                    timeout=30.0,
+                )
+            except Exception:
+                pass
+            raise
+
     def __repr__(self) -> str:
         return f"Index(id={self.index_id!r}, index_type={self.index_type!r}, model={self.model_id!r})"
+
+
+def multihop_external(
+    client,
+    question: str,
+    retriever_callback,
+    min_hops: int | None = None,
+    max_hops: int | None = None,
+    r_seed: int | None = None,
+) -> dict:
+    """Run a fully-external multi-hop search.
+
+    No Dasein index. The customer brings both the encoder and the
+    vector DB. Dasein only hosts the multi-hop controller.
+
+    ``retriever_callback`` is called with the controller-emitted
+    sub-query text on each hop and must return a dict::
+
+        {
+          "dense": [{"id": str, "score": float, "vec": list[float], "text": str}, ...],
+          "bm25":  [{"id": str, "score": float, "text": str}, ...],   # optional
+        }
+
+    The ``vec`` field is required on dense hits to feed the universal
+    rotation. ``text`` should be present on every hit for the reranker
+    text-embed lane.
+    """
+    if not callable(retriever_callback):
+        raise ValueError("retriever_callback must be a callable str -> dict")
+    open_payload: dict[str, Any] = {
+        "question": question,
+        "mode": "external",
+    }
+    if min_hops is not None:
+        open_payload["min_hops"] = min_hops
+    if max_hops is not None:
+        open_payload["max_hops"] = max_hops
+    if r_seed is not None:
+        open_payload["r_seed"] = r_seed
+    resp = client._request("POST", "/multihop/session",
+                           json=open_payload, timeout=60.0)
+    opened = _resp_json(resp)
+    sid = opened["session_id"]
+
+    try:
+        next_q = opened.get("first_query_text") or question
+        while True:
+            hits = retriever_callback(next_q)
+            if not isinstance(hits, dict) or "dense" not in hits:
+                raise DaseinError("retriever_callback must return {'dense': [...], 'bm25': [...]}")
+            step_payload = {"dense": hits["dense"]}
+            if hits.get("bm25"):
+                step_payload["bm25"] = hits["bm25"]
+            resp = client._request("POST", f"/multihop/session/{sid}/step",
+                                    json=step_payload, timeout=60.0)
+            step = _resp_json(resp)
+            if step.get("terminated"):
+                break
+            next_q = step.get("next_query_text")
+            if not next_q:
+                break
+        resp = client._request("POST", f"/multihop/session/{sid}/finish",
+                                json={}, timeout=30.0)
+        return _resp_json(resp)
+    except Exception:
+        try:
+            client._request("POST", f"/multihop/session/{sid}/finish",
+                            json={}, timeout=30.0)
+        except Exception:
+            pass
+        raise

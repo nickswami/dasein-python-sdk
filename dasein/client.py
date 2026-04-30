@@ -36,7 +36,7 @@ except ImportError:
 DEFAULT_BASE_URL = "https://api.daseinai.ai"
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_RETRIES = 3
-__version__ = "0.4.7"
+__version__ = "0.4.8"
 
 
 class Client:
@@ -420,6 +420,15 @@ class Client:
                 error=b.get("error"),
             ))
         return out
+
+    def multihop_external(self, question: str, retriever_callback,
+                          min_hops: int | None = None,
+                          max_hops: int | None = None,
+                          r_seed: int | None = None) -> dict:
+        """Run a fully-external multi-hop search. See dasein.multihop_external."""
+        from dasein.index import multihop_external as _mh_ext
+        return _mh_ext(self, question, retriever_callback,
+                       min_hops=min_hops, max_hops=max_hops, r_seed=r_seed)
 
     def close(self) -> None:
         self._client.close()

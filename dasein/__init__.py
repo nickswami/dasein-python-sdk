@@ -1,5 +1,5 @@
 from dasein.client import Client
-from dasein.index import Index
+from dasein.index import Index, multihop_external
 from dasein.types import QueryResult, QueryResponse, UpsertItem, IndexInfo
 from dasein.exceptions import (
     DaseinError,
@@ -11,10 +11,11 @@ from dasein.exceptions import (
     DaseinBuildError,
 )
 
-__version__ = "0.4.7"
+__version__ = "0.4.8"
 __all__ = [
     "Client",
     "Index",
+    "multihop_external",
     "QueryResult",
     "QueryResponse",
     "UpsertItem",
