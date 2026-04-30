@@ -289,19 +289,20 @@ class Index:
         if dynamic_hybrid and top_k > 100:
             raise ValueError("dynamic_hybrid requires top_k <= 100")
 
-        import base64 as _b64
-
         payload: dict[str, Any] = {"top_k": top_k, "mode": mode}
         if text is not None:
             payload["text"] = text
-        wire_b64 = False
+        # The single-query control-plane endpoint validates the request
+        # against a strict pydantic model where vector is list[float], so a
+        # base64 string would 422 before reaching the daemon. The wire-size
+        # win on a single 4 KB vector is also negligible vs the round-trip,
+        # so we always send JSON list here. (query_batch goes through the
+        # router which does decode base64 — that path is unchanged.)
         if vector is not None:
             if _HAS_NUMPY:
-                arr = _np.asarray(vector, dtype=_np.float32)
-                payload["vector"] = _b64.b64encode(arr.tobytes()).decode("ascii")
-                wire_b64 = True
+                payload["vector"] = _np.asarray(vector, dtype=_np.float32).tolist()
             else:
-                payload["vector"] = list(vector)
+                payload["vector"] = [float(x) for x in vector]
         if filter is not None:
             payload["filter"] = filter
         if exact:
@@ -320,15 +321,6 @@ class Index:
             payload["dynamic_hybrid"] = True
         if include_vectors:
             payload["include_vectors"] = True
-            # Ask the server for base64-encoded fp32 vectors when we can
-            # decode them natively. This turns a 1.5 MB JSON-float-array
-            # response into a ~550 KB string that np.frombuffer decodes
-            # outside the GIL — fixes the 20x throughput cliff we hit at
-            # high concurrency when include_vectors=True.
-            if _HAS_NUMPY:
-                wire_b64 = True
-        if wire_b64:
-            payload["vector_format"] = "base64"
 
         t0 = time.perf_counter()
         resp = self._client._request(
