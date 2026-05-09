@@ -11,7 +11,7 @@ from dasein.exceptions import (
     DaseinBuildError,
 )
 
-__version__ = "0.4.9"
+__version__ = "0.4.10"
 __all__ = [
     "Client",
     "Index",

@@ -300,7 +300,7 @@ class Index:
         # router which does decode base64 — that path is unchanged.)
         if vector is not None:
             if _HAS_NUMPY:
-                payload["vector"] = _np.asarray(vector, dtype=_np.float32).tolist()
+                payload["vector"] = np.asarray(vector, dtype=np.float32).tolist()
             else:
                 payload["vector"] = [float(x) for x in vector]
         if filter is not None:
@@ -687,7 +687,7 @@ class Index:
             while True:
                 vec = encoder_callback(next_q)
                 if _HAS_NUMPY:
-                    vec = _np.asarray(vec, dtype=_np.float32).tolist()
+                    vec = np.asarray(vec, dtype=np.float32).tolist()
                 else:
                     vec = list(vec)
                 step_payload = {"vector": vec, "top_k": top_k}
