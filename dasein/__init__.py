@@ -13,7 +13,7 @@ from dasein.exceptions import (
     DaseinBuildError,
 )
 
-__version__ = "0.4.16"
+__version__ = "0.4.17"
 __all__ = [
     "Client",
     "Index",

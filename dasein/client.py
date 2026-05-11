@@ -43,7 +43,7 @@ except ImportError:
 DEFAULT_BASE_URL = "https://api.daseinai.ai"
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_RETRIES = 3
-__version__ = "0.4.16"
+__version__ = "0.4.17"
 
 
 class Client:

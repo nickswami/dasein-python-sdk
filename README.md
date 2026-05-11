@@ -4,7 +4,9 @@
 
 # Dasein
 
-**Multi-hop retrieval in ~1 second. Higher recall. 68% fewer tokens to your LLM.**
+**Agentic search for the agent era.**
+The retrieval layer for AI agents — multi-hop, smarter ranking, trimmed context, in ~1 second. One call instead of a vector DB + reranker + query planner + multi-hop loop.
+
 Agentic Search · Dynamic Top-K · Dynamic Hybrid · Hybrid dense + BM25 · Managed embedding
 
 [![PyPI](https://img.shields.io/pypi/v/dasein-ai.svg?color=4b3ed6&label=pypi)](https://pypi.org/project/dasein-ai/)
@@ -20,15 +22,15 @@ Agentic Search · Dynamic Top-K · Dynamic Hybrid · Hybrid dense + BM25 · Mana
 
 ---
 
-The managed vector index that does the hard parts of retrieval for you. Agentic decomposition, per-query α fusion, and Dynamic Top-K — all on a single `index.query()` call. Built for teams tired of paying their LLM provider to read ten mediocre chunks when two would have done it.
+Built for teams shipping agents — copilots, support bots, research assistants, anything that retrieves to reason. One `index.query(agentic_search=True)` replaces the stack of vector DB + reranker + query decomposer + multi-hop orchestrator most agent teams stitch together today. Your agent gets the answer-shaped result it needs, not ten chunks of slop.
 
-**Higher recall.** [Dynamic Hybrid](dynamic_hybrid_results/dynamic_hybrid_summary.md) picks the dense/BM25 α per query instead of one static α tuned to your average query. **Up to +23pt R@10** over fixed-α hybrid. Across any encoder, no retraining.
+**Smarter agents.** [Dynamic Hybrid](dynamic_hybrid_results/dynamic_hybrid_summary.md) picks the dense/BM25 α per query instead of one static α tuned to your average query. **Up to +23pt R@10** over fixed-α hybrid. Across any encoder, no retraining.
 
-**~68% fewer tokens to your LLM.** Dynamic Top-K trims the result set per query — 1–3 results on easy queries, the full budget on hard ones, recall held flat or higher. Your `top_k` stays a hard ceiling, Dasein only ever clips down. Pairs with Agentic Search for **compounding savings on every hop**.
+**Cheaper agents.** Dynamic Top-K trims the result set per query — **~68% fewer tokens to your LLM**, recall held flat or higher. 1–3 results on easy queries, the full budget on hard ones. Pairs with Agentic Search for **compounding savings on every hop**.
 
-**In ~1 second.** Agentic Search runs 3–5 retrieval hops with intermediate reasoning server-side, then returns the final-hop ranking — in roughly the time most RAG stacks take for a single-hop top-10.
+**Faster agents.** Agentic Search runs 3–5 retrieval hops with intermediate reasoning server-side, then returns the final-hop ranking — **in ~1 second**. Roughly the time most RAG stacks take for a single-hop top-10.
 
-**Smaller, faster index.** **12× smaller than fp32, 10× faster queries.** The compression *is* the speedup — smaller footprint keeps more of your index hot. [Benchmarks →](https://results.daseinai.ai/results)
+**Drop-in.** One method call. Replaces a vector DB, a reranker, a query decomposer, and a multi-hop orchestrator. **12× smaller, 10× faster** than fp32 baselines under the hood. [Benchmarks →](https://results.daseinai.ai/results)
 
 ## Install
 
