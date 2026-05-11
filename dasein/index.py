@@ -8,7 +8,13 @@ import io
 import time
 from typing import TYPE_CHECKING, Any
 
-from dasein.types import QueryResult, QueryResponse, IndexInfo, UpsertItem
+from dasein.types import (
+    QueryResult,
+    QueryResponse,
+    IndexInfo,
+    UpsertItem,
+    _alpha_user_to_server,
+)
 from dasein.exceptions import DaseinError, DaseinBuildError, DaseinUnavailableError
 
 try:
@@ -275,7 +281,8 @@ class Index:
             phrase: Phrase matching -- only return docs containing the query as an exact phrase
             fuzzy: Fuzzy matching -- match keywords with typo tolerance (edit distance 1)
             alpha: Balance between dense and BM25 in hybrid RRF fusion.
-                0.0 = all dense, 1.0 = all BM25, 0.5 = equal (default).
+                Pinecone / Weaviate convention: 1.0 = pure dense,
+                0.0 = pure BM25, 0.5 = equal (default).
             include_text: Return stored text in results (requires SSD read, default False).
             include_metadata: Return stored metadata in results (requires SSD read, default False).
             include_vectors: Return reconstructed approximate vectors (from RAM, default False).
@@ -375,8 +382,11 @@ class Index:
             payload["phrase"] = True
         if fuzzy:
             payload["fuzzy"] = True
+        # Public alpha is the dense weight (1=dense, 0=BM25); the server
+        # stores it as the BM25 weight, so flip on the wire. The default
+        # 0.5 is symmetric so the != 0.5 short-circuit still works.
         if alpha != 0.5:
-            payload["alpha"] = alpha
+            payload["alpha"] = _alpha_user_to_server(alpha)
         if include_text:
             payload["include_text"] = True
         if include_metadata:
@@ -485,7 +495,9 @@ class Index:
             # not a QA system.
             "include_answer": bool(include_answer),
             "mode": mode,
-            "alpha": alpha,
+            # Public alpha is the dense weight; flip to the server's
+            # BM25-weight convention. Mirrors the single-hop path.
+            "alpha": _alpha_user_to_server(alpha),
             "dynamic_hybrid": bool(dynamic_hybrid),
             "dynamic_top_k": bool(dynamic_top_k),
             "exact": bool(exact),

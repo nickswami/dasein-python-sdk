@@ -5,6 +5,42 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+# ---------------------------------------------------------------------------
+# Hybrid-fusion alpha convention.
+#
+# Public / SDK convention (matches Pinecone, Weaviate, the standard hybrid
+# search literature):
+#
+#     score = alpha * dense + (1 - alpha) * sparse
+#     alpha = 1.0  →  pure dense
+#     alpha = 0.0  →  pure BM25 / sparse
+#     alpha = 0.5  →  even blend
+#
+# The server (engine/csrc/serve.c, the dynamic-hybrid alpha head, and the
+# dynamic-hybrid checkpoints under gs://.../dh/) was originally wired with
+# the *complement* — alpha = BM25 weight — and the trained DH heads emit
+# their scalars in that internal frame. Rather than retrain the heads and
+# break every deployed serving pod, the SDK transparently flips on the
+# wire: user → server on send, server → user on receive. Server stays
+# untouched; users see the standard convention end to end.
+#
+# The flip is symmetric (1 - x), so one helper is enough.
+# ---------------------------------------------------------------------------
+
+def _alpha_user_to_server(alpha: float) -> float:
+    """Convert a public-convention alpha (1=dense) to the server's internal
+    alpha (1=BM25). Used everywhere the SDK forwards a user-supplied
+    alpha to the API."""
+    return 1.0 - float(alpha)
+
+
+def _alpha_server_to_user(alpha: float) -> float:
+    """Convert a server-side alpha (1=BM25) into the public convention
+    (1=dense). Used when surfacing scalars from /v1/predict_alpha and
+    /v1/predict_dynamic_top_k to the caller."""
+    return 1.0 - float(alpha)
+
+
 @dataclass
 class UpsertItem:
     """A document to upsert into an index."""
@@ -97,8 +133,8 @@ class DynamicTopKResult:
       use the **alpha-fused dense + BM25 ranking** (with the ``alpha``
       below).
     * ``alpha`` — the same per-query fusion weight returned by
-      :meth:`Client.predict_alpha`. In ``[0.0, 1.0]``: 0 = all dense,
-      1 = all BM25, 0.5 = even blend.
+      :meth:`Client.predict_alpha`. In ``[0.0, 1.0]``: 1 = pure dense,
+      0 = pure BM25, 0.5 = even blend (Pinecone / Weaviate convention).
 
     Both K values are integers in ``[1, 10]`` (the keep heads were
     trained against that budget). Use them as a **tighter bound** on

@@ -148,7 +148,10 @@ def test_agentic_hybrid_alpha_forwarded(server):
     idx.query("foo", agentic_search=True, mode="hybrid", alpha=0.7)
     body = _last_body()
     assert body["mode"] == "hybrid"
-    assert body["alpha"] == pytest.approx(0.7)
+    # Public alpha is the dense weight (Pinecone / Weaviate); the SDK
+    # flips to the server's internal BM25-weight convention on the wire.
+    # alpha=0.7 (dense-leaning) → body["alpha"]=0.3 (BM25-weight=0.3).
+    assert body["alpha"] == pytest.approx(0.3)
     assert body["dynamic_hybrid"] is False
 
 

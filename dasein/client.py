@@ -17,7 +17,14 @@ from typing import Any
 import httpx
 
 from dasein.index import Index, _decode_vector, _resp_json
-from dasein.types import IndexInfo, QueryResult, QueryResponse, DynamicTopKResult
+from dasein.types import (
+    IndexInfo,
+    QueryResult,
+    QueryResponse,
+    DynamicTopKResult,
+    _alpha_server_to_user,
+    _alpha_user_to_server,
+)
 from dasein.exceptions import (
     DaseinAuthError,
     DaseinQuotaError,
@@ -36,7 +43,7 @@ except ImportError:
 DEFAULT_BASE_URL = "https://api.daseinai.ai"
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_RETRIES = 3
-__version__ = "0.4.11"
+__version__ = "0.4.12"
 
 
 class Client:
@@ -245,16 +252,17 @@ class Client:
         Call this from *any* search stack — you don't need a Dasein index.
         Dasein returns ``alpha ∈ [0.0, 1.0]`` for the given query: blend
         your own dense and BM25 rankings at that weight and ship the fused
-        list.
+        list. Convention matches Pinecone / Weaviate:
 
-        - 0.0  →  use only your dense ranking
-        - 1.0  →  use only your BM25 ranking
+        - 1.0  →  use only your dense ranking
+        - 0.0  →  use only your BM25 ranking
         - 0.5  →  equal blend
 
         Typical usage::
 
             qvec = my_encoder.encode("who founded apple?")
             alpha = client.predict_alpha("who founded apple?", query_vector=qvec)
+            # alpha=1 is pure dense, alpha=0 is pure BM25
             fused = rrf_fuse(dense_hits, bm25_hits, alpha=alpha)
 
         Args:
@@ -286,7 +294,9 @@ class Client:
             payload["model_id"] = model_id
         resp = self._request("POST", "/v1/predict_alpha", json=payload)
         data = resp.json()
-        return float(data["alpha"])
+        # Flip server convention (alpha = BM25 weight) into the standard
+        # public convention (alpha = dense weight). See _alpha_user_to_server.
+        return _alpha_server_to_user(float(data["alpha"]))
 
     def predict_dynamic_top_k(
         self,
@@ -357,7 +367,7 @@ class Client:
         return DynamicTopKResult(
             top_k_dense=int(data["top_k_dense"]),
             top_k_hybrid=int(data["top_k_hybrid"]),
-            alpha=float(data["alpha"]),
+            alpha=_alpha_server_to_user(float(data["alpha"])),
         )
 
     def query_batch(
@@ -435,11 +445,15 @@ class Client:
 
             for key in (
                 "text", "top_k", "mode", "filter",
-                "exact", "phrase", "fuzzy", "alpha",
+                "exact", "phrase", "fuzzy",
                 "include_text", "include_metadata", "include_vectors",
             ):
                 if key in q and q[key] is not None:
                     entry[key] = q[key]
+            # Alpha is forwarded in user convention (1=dense, 0=BM25)
+            # but the server stores it as BM25 weight; flip on the wire.
+            if q.get("alpha") is not None:
+                entry["alpha"] = _alpha_user_to_server(q["alpha"])
 
             if entry.get("include_vectors"):
                 any_wants_vec = True

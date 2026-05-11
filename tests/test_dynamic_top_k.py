@@ -185,6 +185,10 @@ def test_agentic_dynamic_top_k_requires_dynamic_hybrid(server):
 # ── BYO surface: client.predict_dynamic_top_k ──────────────────────────────
 
 def test_predict_dynamic_top_k_returns_struct(server):
+    # Server emits alpha in the internal "alpha = BM25 weight" frame; the
+    # SDK flips it into the public Pinecone / Weaviate convention
+    # (alpha = dense weight) on the way out — so 0.42 over the wire shows
+    # up to the caller as 1 - 0.42 = 0.58.
     _Handler._responses["/v1/predict_dynamic_top_k"] = {
         "status": 200,
         "body": {
@@ -198,7 +202,7 @@ def test_predict_dynamic_top_k_returns_struct(server):
     r = client.predict_dynamic_top_k("who founded apple?",
                                       query_vector=[0.1, 0.2, 0.3])
     assert isinstance(r, DynamicTopKResult)
-    assert r.alpha == pytest.approx(0.42)
+    assert r.alpha == pytest.approx(0.58)
     assert r.top_k_dense == 3
     assert r.top_k_hybrid == 5
 

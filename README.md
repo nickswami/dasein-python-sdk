@@ -137,7 +137,7 @@ for h in response.hops:         # per-hop sub-q text, fused hits, timings
 **All your retrieval settings still apply, on every hop.** Each hop runs the retrieval mode you configured at the call site:
 
 ```python
-# multi-hop with hybrid α=0.7 on every hop
+# multi-hop with hybrid α=0.7 on every hop (dense-leaning; alpha=1.0 is pure dense)
 index.query("...", agentic_search=True, mode="hybrid", alpha=0.7)
 
 # multi-hop with managed dynamic hybrid on every hop
@@ -176,8 +176,9 @@ results = index.query("machine learning", top_k=10, mode="hybrid", phrase=True)
 # Fuzzy matching — handles typos (edit distance 1)
 results = index.query("machin lerning", top_k=10, mode="hybrid", fuzzy=True)
 
-# Tune the dense vs BM25 balance (0.0 = all dense, 1.0 = all BM25, default 0.5)
-results = index.query("AAPL earnings", top_k=10, mode="hybrid", alpha=0.7)  # lean keyword-heavy
+# Tune the dense vs BM25 balance (1.0 = all dense, 0.0 = all BM25, default 0.5)
+# Pinecone / Weaviate convention: alpha is the dense weight.
+results = index.query("AAPL earnings", top_k=10, mode="hybrid", alpha=0.3)  # lean keyword-heavy
 ```
 
 Hybrid mode is strongest on queries with specific keywords, entity names, or codes where pure semantic search loses signal. Dense mode is better for abstract, conceptual queries. You choose per query. The keyword features (`exact`, `phrase`, `fuzzy`) refine hybrid results — use them when you need precise keyword control. The `alpha` parameter lets you tune the balance between dense and BM25 ranking in the fusion step.
@@ -214,8 +215,9 @@ alpha = client.predict_alpha("who founded apple?", query_vector=qvec)
 fused = rrf_fuse(my_dense_hits, my_bm25_hits, alpha=alpha)
 ```
 
-Returns a `float` in `[0.0, 1.0]` (0 = all dense, 1 = all BM25). Works
-across encoders — just pass the vector from whichever encoder you use.
+Returns a `float` in `[0.0, 1.0]` (1 = all dense, 0 = all BM25 —
+matches the Pinecone / Weaviate convention). Works across encoders —
+just pass the vector from whichever encoder you use.
 
 `query_vector` is strongly recommended. If you omit it, Dasein will embed
 `text` with its default model and return an alpha tied to *that* model's
@@ -540,7 +542,7 @@ results = index.query(
     exact=False,                 # exact keyword matching (hybrid only)
     phrase=False,                # exact phrase matching (hybrid only)
     fuzzy=False,                 # typo-tolerant matching (hybrid only)
-    alpha=0.5,                   # dense vs BM25 balance (0=dense, 1=BM25)
+    alpha=0.5,                   # dense vs BM25 balance (1=dense, 0=BM25)
     dynamic_hybrid=False,        # let Dasein pick alpha per query (hybrid only, top_k<=100)
     include_text=False,          # return stored text (off by default)
     include_metadata=False,      # return stored metadata (off by default)
