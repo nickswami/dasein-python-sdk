@@ -130,6 +130,7 @@ def test_agentic_dense_mode_forwards_kwargs(server):
     assert body["exact"] is False
     assert body["phrase"] is False
     assert body["fuzzy"] is False
+    assert body["include_answer"] is False
     assert "filter" not in body or body["filter"] is None
     # response shape — final_answer is opt-in, off by default
     assert resp.final_answer is None
@@ -223,6 +224,9 @@ def test_agentic_include_answer_opt_in_populates_field(server):
     idx = _make_idx(server)
     resp = idx.query("foo", agentic_search=True, include_answer=True)
     assert resp.final_answer == "Inception"
+    # the toggle must also be forwarded over the wire so the server can
+    # actually run the reader on the final hop
+    assert _last_body()["include_answer"] is True
 
 
 def test_agentic_include_answer_handles_missing_server_field(server):

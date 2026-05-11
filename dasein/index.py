@@ -454,6 +454,11 @@ class Index:
             # expose the per-hop trace to the *user*; we keep it server-
             # side-on internally to materialize the final ranking.
             "verbose": True,
+            # Opt-in: actually run the reader on the final hop. Without
+            # this the server short-circuits the final reader for
+            # latency (~170-250ms saved) since this is a search system,
+            # not a QA system.
+            "include_answer": bool(include_answer),
             "mode": mode,
             "alpha": alpha,
             "dynamic_hybrid": bool(dynamic_hybrid),
