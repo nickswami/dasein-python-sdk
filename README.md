@@ -20,15 +20,15 @@ Agentic Search · Dynamic Top-K · Dynamic Hybrid · Hybrid dense + BM25 · Mana
 
 ---
 
-The managed vector index that does the hard parts of retrieval for you. Agentic decomposition, per-query α fusion, and Dynamic Top-K — all on a single `index.query()` call. Higher recall, ~68% fewer tokens into your LLM, in roughly the time most RAG stacks take for a single-hop top-10. Built for teams tired of paying their LLM provider to read ten mediocre chunks when two would have done it.
+The managed vector index that does the hard parts of retrieval for you. Agentic decomposition, per-query α fusion, and Dynamic Top-K — all on a single `index.query()` call. Built for teams tired of paying their LLM provider to read ten mediocre chunks when two would have done it.
 
-**Higher recall.** [Dynamic Hybrid](dynamic_hybrid_results/dynamic_hybrid_summary.md) picks the dense/BM25 α **per query** instead of one static α tuned to your average query. **FEVER R@10 0.85 → 0.97. NQ R@10 0.69 → 0.92.** Beats best-static-α across FiQA, FEVER, SciFact, and NQ on R@10, MRR, and mean rank — without the R@1 collapse static α always pays. Across encoders (MiniLM 22M to E5-Mistral 7B), no retraining.
+**Higher recall.** [Dynamic Hybrid](dynamic_hybrid_results/dynamic_hybrid_summary.md) picks the dense/BM25 α per query instead of one static α tuned to your average query. **Up to +23pt R@10** over fixed-α hybrid. Across any encoder, no retraining.
 
-**~68% fewer tokens to your LLM.** Dynamic Top-K predicts the smallest top-K that still retains the gold, per query. **−68.4% tokens and −63.5% records at +0.07 R@10 vs fixed top-10 dense** (Dasein-native, pooled across FEVER + NQ + SciFact + FiQA, n=223,763). 1–3 results on easy queries, the full budget on hard ones — your `top_k` stays a hard ceiling, Dasein only ever clips down. Pairs with Agentic Search for **compounding savings on every hop**.
+**~68% fewer tokens to your LLM.** Dynamic Top-K trims the result set per query — 1–3 results on easy queries, the full budget on hard ones, recall held flat or higher. Your `top_k` stays a hard ceiling, Dasein only ever clips down. Pairs with Agentic Search for **compounding savings on every hop**.
 
-**In ~1 second.** Agentic Search runs 3–5 retrieval hops with intermediate reasoning server-side, then returns the final-hop ranking — in roughly the time most RAG stacks take for a single-hop top-10. Same response shape as a normal `index.query()`.
+**In ~1 second.** Agentic Search runs 3–5 retrieval hops with intermediate reasoning server-side, then returns the final-hop ranking — in roughly the time most RAG stacks take for a single-hop top-10.
 
-**Smaller, faster index.** **12× smaller than fp32** with 99.96% recall preserved. **10× faster queries** in our [VectorDBBench runs](https://results.daseinai.ai/results). The compression *is* the speedup — smaller footprint keeps more of your index hot.
+**Smaller, faster index.** **12× smaller than fp32, 10× faster queries.** The compression *is* the speedup — smaller footprint keeps more of your index hot. [Benchmarks →](https://results.daseinai.ai/results)
 
 ## Install
 
