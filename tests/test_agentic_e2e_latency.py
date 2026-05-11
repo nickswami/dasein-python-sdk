@@ -20,9 +20,9 @@ The harness runs **two** calls:
 
 Assertions match the warm band we observed on the live demo:
 
-  * total wall-time < 2.5 s   (hard ceiling — fail on regression)
-  * total wall-time < 1.8 s   (soft target — emits a warning)
-  * we got a non-empty fused ranking AND a parsed final_answer
+  * total wall-time < 1.5 s   (hard ceiling — fail on regression)
+  * total wall-time < 1.2 s   (soft target — emits a warning)
+  * we got a non-empty fused ranking back
 
 Override the budget with DASEIN_AGENTIC_E2E_MAX_S if you need to be
 forgiving on a degraded host.
@@ -50,8 +50,10 @@ _DEFAULT_QUESTION = (
     "alright, alright' guy in Dazed and Confused?"
 )
 _DEFAULT_BASE_URL = "https://api.daseinai.ai"
-_DEFAULT_MAX_S = 2.5     # hard fail above this
-_SOFT_TARGET_S = 1.8     # warn above this, fail above _DEFAULT_MAX_S
+# Demo runs 3-4 hops in ~1 s warm. We give a small buffer and fail
+# anything beyond — agentic_search is supposed to be ~demo-speed.
+_DEFAULT_MAX_S = 1.5     # hard fail above this
+_SOFT_TARGET_S = 1.2     # warn above this, fail above _DEFAULT_MAX_S
 
 
 pytestmark = pytest.mark.skipif(
@@ -70,18 +72,36 @@ def _client_and_index():
     return client, client.get_index(os.environ[_INDEX_ENV])
 
 
-def test_agentic_search_warm_latency_within_budget():
-    """End-to-end latency on a warm production index.
+def _check_latency(elapsed: float, *, label: str, max_s: float):
+    """Common latency assertion — print elapsed for visibility in -s mode,
+    warn above soft target, hard-fail above ceiling."""
+    print(f"\n[e2e] {label}: warm latency = {elapsed*1000:.0f} ms "
+          f"(soft target {_SOFT_TARGET_S*1000:.0f} ms, "
+          f"hard ceiling {max_s*1000:.0f} ms)")
+    if elapsed > _SOFT_TARGET_S:
+        warnings.warn(
+            f"agentic_search [{label}] warm latency {elapsed:.2f}s "
+            f"exceeded soft target {_SOFT_TARGET_S:.2f}s "
+            f"(hard ceiling {max_s:.2f}s)",
+            stacklevel=2,
+        )
+    assert elapsed < max_s, (
+        f"agentic_search [{label}] warm latency regression: "
+        f"{elapsed:.2f}s >= {max_s:.2f}s ceiling"
+    )
 
-    Production multihop p50 (3-4 hops) is ~1.0-1.6 s. We pay the cold-path
-    open_session + resolver cache miss on the first call, then assert on
-    the second. Hard ceiling 2.5 s — anything above that is a regression.
+
+def test_agentic_search_warm_latency_within_budget():
+    """End-to-end latency on a warm production index, static hybrid α=0.5.
+
+    Demo p50 (3-4 hops) is ~1 s. We pay the cold-path open_session +
+    resolver cache miss on the warmup call, then assert on the measured
+    call.
     """
     question = os.environ.get(_QUESTION_ENV, _DEFAULT_QUESTION)
     max_s = float(os.environ.get(_MAX_S_ENV, _DEFAULT_MAX_S))
     _, idx = _client_and_index()
 
-    # Warmup: discard timing.
     _ = idx.query(question, top_k=10, agentic_search=True)
 
     t0 = time.perf_counter()
@@ -90,25 +110,10 @@ def test_agentic_search_warm_latency_within_budget():
     elapsed = time.perf_counter() - t0
 
     assert resp.results, "warm agentic query returned an empty ranking"
-    assert resp.final_answer is not None, (
-        "warm agentic query returned no final_answer"
-    )
     assert resp.n_hops and resp.n_hops >= 1, (
         f"expected >=1 hop, got n_hops={resp.n_hops!r}"
     )
-
-    if elapsed > _SOFT_TARGET_S:
-        warnings.warn(
-            f"agentic_search warm latency {elapsed:.2f}s exceeded soft "
-            f"target {_SOFT_TARGET_S:.2f}s (hard ceiling {max_s:.2f}s)",
-            stacklevel=2,
-        )
-    assert elapsed < max_s, (
-        f"agentic_search warm latency regression: {elapsed:.2f}s "
-        f">= {max_s:.2f}s ceiling. response={{"
-        f"n_hops={resp.n_hops}, "
-        f"final_answer={resp.final_answer!r}}}"
-    )
+    _check_latency(elapsed, label="static-hybrid", max_s=max_s)
 
 
 def test_agentic_search_respects_dynamic_hybrid_per_hop():
@@ -119,7 +124,6 @@ def test_agentic_search_respects_dynamic_hybrid_per_hop():
     max_s = float(os.environ.get(_MAX_S_ENV, _DEFAULT_MAX_S))
     _, idx = _client_and_index()
 
-    # Warmup.
     _ = idx.query(question, top_k=10, agentic_search=True,
                   mode="hybrid", dynamic_hybrid=True)
 
@@ -129,10 +133,30 @@ def test_agentic_search_respects_dynamic_hybrid_per_hop():
     elapsed = time.perf_counter() - t0
 
     assert resp.results, "warm agentic+dh query returned empty ranking"
-    assert elapsed < max_s, (
-        f"agentic_search+dynamic_hybrid warm latency {elapsed:.2f}s "
-        f">= {max_s:.2f}s ceiling"
+    _check_latency(elapsed, label="dynamic-hybrid", max_s=max_s)
+
+
+def test_agentic_search_include_answer_opt_in():
+    """`include_answer=True` populates response.final_answer; default off."""
+    question = os.environ.get(_QUESTION_ENV, _DEFAULT_QUESTION)
+    _, idx = _client_and_index()
+
+    off = idx.query(question, top_k=5, agentic_search=True)
+    assert off.final_answer is None, (
+        f"final_answer should be None by default, got {off.final_answer!r}"
     )
+
+    on = idx.query(question, top_k=5, agentic_search=True,
+                   include_answer=True)
+    # When the reader extracted something, final_answer is a non-None
+    # string (possibly empty if the reader skipped the final hop, which
+    # is intentional — it's a search ranking, not a QA system). The
+    # contract is: opt-in => field present, default => None.
+    assert on.final_answer is not None, (
+        "final_answer should be a string when include_answer=True"
+    )
+    assert isinstance(on.final_answer, str)
+    print(f"\n[e2e] include_answer=True -> final_answer={on.final_answer!r}")
 
 
 if __name__ == "__main__":

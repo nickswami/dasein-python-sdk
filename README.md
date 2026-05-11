@@ -30,7 +30,7 @@ Send raw text in, get ranked results out. One method call — Dasein runs the em
 
 **Faster.** **10× faster queries** than typical production setups in our [VectorDBBench runs](https://results.daseinai.ai/results). The compression *is* the speedup — smaller footprint keeps more of your index hot.
 
-**Agentic.** Add `agentic_search=True` to any `index.query()` call and Dasein decomposes your question into a chain of sub-questions, runs 3–5 hops of retrieval + reading against your own index, and returns the final ranking plus a parsed natural-language answer — typically in **~1.0–1.6 s** end-to-end. Your retrieval settings (mode, alpha, dynamic hybrid, filter, BM25 modifiers) apply to every hop.
+**Agentic.** Add `agentic_search=True` to any `index.query()` call and Dasein decomposes your question into a chain of sub-questions, runs 3–5 hops of retrieval against your own index, and returns the final-hop ranking — typically in **~1 s** end-to-end. Same response shape as a normal query (a ranked list); the multi-hop reasoning happens entirely server-side. Your retrieval settings (mode, alpha, dynamic hybrid, filter, BM25 modifiers) apply to every hop.
 
 ## Install
 
@@ -93,9 +93,9 @@ index = client.create_index("my-docs", index_type="dense", model="bge-large-en-v
 
 ## Agentic Search — managed multi-hop
 
-Some questions can't be answered by retrieving a single passage. *"What 2010 dream-heist movie was directed by the filmmaker who made the space wormhole movie starring the actor who played the 'Alright, alright, alright' guy in Dazed and Confused?"* needs a **chain** of retrievals — first identify the actor, then the wormhole movie, then its director, then their 2010 dream-heist movie.
+Some queries can't be served by a single similarity match. *"What 2010 dream-heist movie was directed by the filmmaker who made the space wormhole movie starring the actor who played the 'Alright, alright, alright' guy in Dazed and Confused?"* needs a **chain** of retrievals — first narrow to the actor, then to the wormhole movie, then to its director, then to their 2010 dream-heist movie.
 
-Dasein bundles the whole pipeline — sub-question decomposition, multi-hop retrieval, intermediate reading, and answer extraction — behind a single flag on the same `index.query()` you already use:
+Set `agentic_search=True` on `index.query()` and Dasein runs the whole chain server-side — sub-question decomposition, 3–5 hops of retrieval against your own index, per-hop refinement — and returns the final-hop ranking. Same response shape as a normal query: a ranked list of documents.
 
 ```python
 response = index.query(
@@ -106,19 +106,33 @@ response = index.query(
     agentic_search=True,
 )
 
-print(response.final_answer)        # → "Inception"
-for r in response.results:          # final-hop fused ranking, like normal query()
+# Same shape as index.query() — iterate it like any other ranking.
+for r in response.results:
     print(r.id, r.score, r.metadata)
 ```
 
-The response is a regular `QueryResponse` — iterate it like any other query result. Two extra fields appear when `agentic_search=True`:
+This is a **retrieval** system, not a QA / RAG chatbot. The deliverable is the ranking, the same shape `index.query()` always returns. The chain reasoning happens internally to *produce* a better final ranking; you get a list of documents.
 
-- `response.final_answer` — the parsed natural-language answer to your original question
-- `response.n_hops` — how many hops the controller actually ran (3–5)
+If you also want the reader's one-line answer alongside the ranking, opt in with `include_answer=True`:
 
-Pass `return_hops=True` to get the full per-hop trace in `response.hops` (sub-question text, fused ids/scores/metadata/texts per hop, reader output, per-stage timings) — useful for debugging and for showing the user how the system reasoned.
+```python
+response = index.query("...", agentic_search=True, include_answer=True)
+print(response.final_answer)    # e.g. "Inception" (off by default)
+for r in response.results:
+    print(r.id, r.score)
+```
 
-**All your retrieval settings still apply, on every hop.** Each hop runs the same retrieval mode you configured at the call site:
+Pass `return_hops=True` if you want the per-hop trace for debugging or UI:
+
+```python
+response = index.query("...", agentic_search=True, return_hops=True)
+print(response.chain)           # the sub-question templates the system ran
+print(response.n_hops)          # number of hops actually executed
+for h in response.hops:         # per-hop sub-q text, fused hits, timings
+    print(h["hop"], h["sub_query_text"], len(h["fused_ids"]))
+```
+
+**All your retrieval settings still apply, on every hop.** Each hop runs the retrieval mode you configured at the call site:
 
 ```python
 # multi-hop with hybrid α=0.7 on every hop
@@ -134,7 +148,7 @@ index.query("...", agentic_search=True, filter={"year": {"$gte": 2010}})
 index.query("...", agentic_search=True, mode="hybrid", phrase=True, fuzzy=True)
 ```
 
-Requires `text=...` (vector-only is not supported — sub-question decomposition needs the natural-language question). End-to-end latency is typically **~1.0–1.6 s** for a warm 3–4 hop run on the live demo.
+Requires `text=...` (vector-only is not supported — sub-question decomposition needs the natural-language question). End-to-end latency on the live demo is typically **~1 s** for a warm 3–4 hop run.
 
 ## Hybrid Search
 

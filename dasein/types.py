@@ -37,12 +37,21 @@ class QueryResponse:
     Behaves like a list of QueryResult for backward compatibility —
     you can iterate, index, and len() it directly.
 
-    When the call was an ``agentic_search`` query (multi-hop), the
-    multi-hop fields below are populated. ``results`` holds the final
-    fused ranking from the last hop; ``final_answer`` is the reader's
-    parsed answer to the original question; ``chain`` and ``hops``
-    expose intermediate sub-questions and per-hop hits when the caller
-    passed ``return_hops=True``.
+    When the call was an ``agentic_search`` query (multi-hop), ``results``
+    holds the **final-hop fused ranking** — the documents the system
+    surfaced after working through the chain of sub-questions. This is
+    a retrieval system: the deliverable is the ranked list, same shape
+    as ``index.query()``.
+
+    Optional, off by default:
+
+    * ``final_answer`` — populated only if the caller passed
+      ``include_answer=True``. The reader's parsed answer to the
+      original question, surfaced as a convenience for callers who want
+      a one-liner. The ranking is still the source of truth.
+    * ``chain`` / ``n_hops`` / ``hops`` — populated when the caller
+      passed ``return_hops=True``; otherwise None. Exposes the
+      intermediate sub-questions and per-hop hits for debugging / UI.
     """
     results: list[QueryResult]
     round_trip_ms: float = 0.0

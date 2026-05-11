@@ -67,7 +67,8 @@ def reset():
 
 
 def _stub_multihop_response(index_id: str, *, hops_payload=None,
-                             final_answer="Inception", n_hops=3):
+                             final_answer="Inception", n_hops=3,
+                             include_top_level_answer: bool = True):
     """Install a canned successful multihop response on the mock server."""
     if hops_payload is None:
         # Default: 3 hops, last hop returns 2 fused ids with text+metadata.
@@ -89,16 +90,17 @@ def _stub_multihop_response(index_id: str, *, hops_payload=None,
              "answer": final_answer,
              "timings_ms": {"total_ms": 250.0}},
         ]
+    body = {
+        "question": "the question",
+        "chain": ["#1", "#2 of #1", "#3 of #2"],
+        "n_hops": n_hops,
+        "max_hops_cap": 5,
+        "hops": hops_payload,
+    }
+    if include_top_level_answer:
+        body["final_answer"] = final_answer
     _Handler._responses[f"/indexes/{index_id}/multihop/query"] = {
-        "status": 200,
-        "body": {
-            "question": "the question",
-            "chain": ["#1", "#2 of #1", "#3 of #2"],
-            "final_answer": final_answer,
-            "n_hops": n_hops,
-            "max_hops_cap": 5,
-            "hops": hops_payload,
-        },
+        "status": 200, "body": body,
     }
 
 
@@ -129,8 +131,8 @@ def test_agentic_dense_mode_forwards_kwargs(server):
     assert body["phrase"] is False
     assert body["fuzzy"] is False
     assert "filter" not in body or body["filter"] is None
-    # response shape
-    assert resp.final_answer == "Inception"
+    # response shape — final_answer is opt-in, off by default
+    assert resp.final_answer is None
     assert resp.n_hops == 3
     assert len(resp.results) == 2
     assert resp.results[0].id == "docA"
@@ -209,6 +211,27 @@ def test_agentic_return_hops_default_false_hides_trace(server):
     assert resp.results[0].id == "docA"
 
 
+def test_agentic_include_answer_default_off(server):
+    _stub_multihop_response("ix1")
+    idx = _make_idx(server)
+    resp = idx.query("foo", agentic_search=True)
+    assert resp.final_answer is None
+
+
+def test_agentic_include_answer_opt_in_populates_field(server):
+    _stub_multihop_response("ix1", final_answer="Inception")
+    idx = _make_idx(server)
+    resp = idx.query("foo", agentic_search=True, include_answer=True)
+    assert resp.final_answer == "Inception"
+
+
+def test_agentic_include_answer_handles_missing_server_field(server):
+    _stub_multihop_response("ix1", include_top_level_answer=False)
+    idx = _make_idx(server)
+    resp = idx.query("foo", agentic_search=True, include_answer=True)
+    assert resp.final_answer is None
+
+
 # ── validation: incompatible combos must fail loud ─────────────────────────
 
 def test_agentic_requires_text(server):
@@ -256,7 +279,9 @@ def test_agentic_empty_hops_yields_empty_results(server):
     idx = _make_idx(server)
     resp = idx.query("x", agentic_search=True)
     assert len(resp.results) == 0
-    assert resp.final_answer == ""
+    # final_answer is opt-in; without include_answer=True it stays None
+    # regardless of what the server returned.
+    assert resp.final_answer is None
 
 
 if __name__ == "__main__":
