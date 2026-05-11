@@ -84,6 +84,33 @@ class QueryResponse:
 
 
 @dataclass
+class DynamicTopKResult:
+    """Per-query Dynamic Top-K prediction (BYO-retriever surface).
+
+    Returned by :meth:`Client.predict_dynamic_top_k`. Backed by the same
+    GPU forward as :meth:`Client.predict_alpha`, so ``alpha`` is included
+    "for free" — apply whichever scalars match your downstream pipeline.
+
+    * ``top_k_dense`` — smallest top-K to retrieve when you're going to
+      use the **dense ranking only**.
+    * ``top_k_hybrid`` — smallest top-K to retrieve when you're going to
+      use the **alpha-fused dense + BM25 ranking** (with the ``alpha``
+      below).
+    * ``alpha`` — the same per-query fusion weight returned by
+      :meth:`Client.predict_alpha`. In ``[0.0, 1.0]``: 0 = all dense,
+      1 = all BM25, 0.5 = even blend.
+
+    Both K values are integers in ``[1, 10]`` (the keep heads were
+    trained against that budget). Use them as a **tighter bound** on
+    your retrieval ``top_k`` — i.e. ``effective_k = min(your_top_k,
+    top_k_hybrid)``.
+    """
+    top_k_dense: int
+    top_k_hybrid: int
+    alpha: float
+
+
+@dataclass
 class IndexInfo:
     """Index metadata. Tolerates extra keys from API for forward compat."""
     index_id: str

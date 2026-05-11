@@ -5,7 +5,7 @@
 # Dasein
 
 **The managed vector index that compresses 12×, queries 10× faster, and lifts R@10 by +22pt over static hybrid.**
-Agentic multi-hop search • Hybrid dense + BM25 • Per-query dynamic α fusion • Zero embedding infrastructure
+Agentic multi-hop search • Dynamic Top-K cutoff • Hybrid dense + BM25 • Per-query dynamic α fusion • Zero embedding infrastructure
 
 [![PyPI](https://img.shields.io/pypi/v/dasein-ai.svg?color=4b3ed6&label=pypi)](https://pypi.org/project/dasein-ai/)
 [![Python](https://img.shields.io/pypi/pyversions/dasein-ai.svg?color=4b3ed6)](https://pypi.org/project/dasein-ai/)
@@ -14,7 +14,7 @@ Agentic multi-hop search • Hybrid dense + BM25 • Per-query dynamic α fusion
 [![Benchmarks](https://img.shields.io/badge/VectorDBBench-results-4b3ed6)](https://results.daseinai.ai/results)
 [![Docs](https://img.shields.io/badge/docs-daseinai.ai-4b3ed6)](https://www.daseinai.ai/)
 
-[Live Demo](https://demo.daseinai.ai) • [Quick Start](#quick-start) • [Agentic Search](#agentic-search--managed-multi-hop) • [Hybrid Search](#hybrid-search) • [Dynamic Hybrid](#dynamic-hybrid--let-dasein-pick-the-balance) • [Query Batch](#query-batch) • [API Reference](#api-reference) • [Benchmarks](https://results.daseinai.ai/results) • [Dynamic Hybrid Results](dynamic_hybrid_results/dynamic_hybrid_summary.md)
+[Live Demo](https://demo.daseinai.ai) • [Quick Start](#quick-start) • [Agentic Search](#agentic-search--managed-multi-hop) • [Dynamic Top-K](#dynamic-top-k--per-query-cutoff) • [Hybrid Search](#hybrid-search) • [Dynamic Hybrid](#dynamic-hybrid--let-dasein-pick-the-balance) • [Query Batch](#query-batch) • [API Reference](#api-reference) • [Benchmarks](https://results.daseinai.ai/results) • [Dynamic Hybrid Results](dynamic_hybrid_results/dynamic_hybrid_summary.md)
 
 </div>
 
@@ -31,6 +31,8 @@ Send raw text in, get ranked results out. One method call — Dasein runs the em
 **Faster.** **10× faster queries** than typical production setups in our [VectorDBBench runs](https://results.daseinai.ai/results). The compression *is* the speedup — smaller footprint keeps more of your index hot.
 
 **Agentic.** Add `agentic_search=True` to any `index.query()` call and Dasein decomposes your question into a chain of sub-questions, runs 3–5 hops of retrieval against your own index, and returns the final-hop ranking — typically in **~1 s** end-to-end. Same response shape as a normal query (a ranked list); the multi-hop reasoning happens entirely server-side. Your retrieval settings (mode, alpha, dynamic hybrid, filter, BM25 modifiers) apply to every hop.
+
+**Dynamic Top-K.** Add `dynamic_top_k=True` (alongside `dynamic_hybrid=True`) and Dasein predicts a per-query cutoff for the kept set — the smallest top-K of the alpha-fused ranking that still retains the gold. Easy queries return 1–3 results; hard queries get the full budget. **Drops downstream LLM token spend** without giving up recall. Same toggle works under `agentic_search=True` (every hop). For BYO retrieval stacks, the standalone `client.predict_dynamic_top_k(text, query_vector=...)` returns the same K + α scalars to apply client-side.
 
 ## Install
 
@@ -141,6 +143,10 @@ index.query("...", agentic_search=True, mode="hybrid", alpha=0.7)
 # multi-hop with managed dynamic hybrid on every hop
 index.query("...", agentic_search=True, mode="hybrid", dynamic_hybrid=True)
 
+# multi-hop with managed Dynamic Top-K on every hop (per-hop K cutoff)
+index.query("...", agentic_search=True, mode="hybrid",
+            dynamic_hybrid=True, dynamic_top_k=True)
+
 # multi-hop with metadata pre-filter on every hop
 index.query("...", agentic_search=True, filter={"year": {"$gte": 2010}})
 
@@ -216,6 +222,77 @@ across encoders — just pass the vector from whichever encoder you use.
 geometry, which will not line up with your own retriever.
 
 Free plans: 1,000 calls per month. Paid hybrid plans: unlimited.
+
+## Dynamic Top-K — per-query cutoff
+
+A fixed `top_k=10` is a worst-case budget. Easy queries don't need 10
+results — the gold lands at rank 1. Hard queries occasionally do.
+Sending the same 10 to a downstream LLM, cross-encoder, or UI on every
+query overpays on the easy ones and underdelivers on the hard ones.
+
+**Dynamic Top-K** predicts the smallest top-K of the alpha-fused ranking
+that still retains the gold, **per query**. Easy queries return 1–3
+results; harder queries get up to the full budget (currently 10). Your
+`top_k` stays a hard ceiling — Dasein only ever clips *down*.
+
+There are two surfaces, picked by where retrieval happens.
+
+### On Dasein indexes — managed toggle
+
+Pair `dynamic_top_k=True` with `dynamic_hybrid=True` on any hybrid
+index. The cutoff is applied server-side; you get the trimmed ranking
+back:
+
+```python
+# Single-hop. K_pred bounds top_k tighter than the 10 you asked for
+# on easy queries, leaves you with 10 on hard ones.
+results = index.query(
+    "AAPL earnings Q3 2025",
+    top_k=10, mode="hybrid",
+    dynamic_hybrid=True, dynamic_top_k=True,
+)
+
+# Agentic. Cutoff applies to *every hop* — slashes per-hop reader/LLM
+# token spend on easy sub-questions while preserving recall on hard
+# ones. Same shape as any other agentic query.
+response = index.query(
+    "What 2010 dream-heist movie was directed by ...",
+    top_k=10, agentic_search=True,
+    dynamic_hybrid=True, dynamic_top_k=True,
+)
+```
+
+`dynamic_top_k=True` requires `dynamic_hybrid=True` — the cutoff was
+trained on the alpha-fused ranking and only makes sense applied to it.
+
+### On your own retrieval stack — `client.predict_dynamic_top_k`
+
+If you run your own dense + BM25 pipeline, hit Dasein for a per-query
+**K_dense**, **K_hybrid**, and **alpha** in one call — no index
+required. Apply whichever K matches your downstream ranking:
+
+```python
+qvec = my_encoder.encode("who founded apple?")
+
+r = client.predict_dynamic_top_k("who founded apple?", query_vector=qvec)
+
+# alpha-fused dense + BM25 path
+fused = rrf_fuse(my_dense_hits, my_bm25_hits, alpha=r.alpha)
+kept  = fused[: r.top_k_hybrid]
+
+# pure dense path
+kept_dense = my_dense_hits[: r.top_k_dense]
+```
+
+Returns a `DynamicTopKResult(top_k_dense, top_k_hybrid, alpha)`. Both Ks
+are integers in `[1, 10]`. Works across encoders — just pass the vector
+from whichever encoder you use.
+
+`query_vector` is strongly recommended for the same reason as
+`predict_alpha`: the prediction is tied to your encoder's geometry.
+
+Free plans: 1,000 calls per month (shared with `predict_alpha`). Paid
+hybrid plans: unlimited.
 
 ## Metadata
 

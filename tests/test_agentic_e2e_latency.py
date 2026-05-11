@@ -136,6 +136,40 @@ def test_agentic_search_respects_dynamic_hybrid_per_hop():
     _check_latency(elapsed, label="dynamic-hybrid", max_s=max_s)
 
 
+def test_agentic_search_with_dynamic_top_k_under_budget():
+    """Multi-hop with dynamic_hybrid + dynamic_top_k. Verifies the
+    Dynamic Top-K cutoff doesn't blow the latency budget — the K head
+    runs in the same forward as the alpha head, so the only added cost
+    is the per-hop slice. Result set may be SHORTER than top_k (that's
+    the point); we just assert non-empty and within budget."""
+    question = os.environ.get(_QUESTION_ENV, _DEFAULT_QUESTION)
+    max_s = float(os.environ.get(_MAX_S_ENV, _DEFAULT_MAX_S))
+    _, idx = _client_and_index()
+
+    _ = idx.query(question, top_k=10, agentic_search=True,
+                  mode="hybrid", dynamic_hybrid=True, dynamic_top_k=True)
+
+    t0 = time.perf_counter()
+    resp = idx.query(question, top_k=10, agentic_search=True,
+                     mode="hybrid", dynamic_hybrid=True, dynamic_top_k=True)
+    elapsed = time.perf_counter() - t0
+
+    assert resp.results, "warm agentic+dh+dyntopk query returned empty ranking"
+    # K_pred ∈ [1, 10] by training; can't exceed the caller's top_k=10.
+    assert len(resp.results) <= 10, (
+        f"dynamic_top_k must not exceed caller's top_k=10, got "
+        f"{len(resp.results)}"
+    )
+    _check_latency(elapsed, label="dynamic-top-k", max_s=max_s)
+
+
+def test_agentic_search_dynamic_top_k_requires_dynamic_hybrid_client_side():
+    """SDK enforces the pairing before any wire call — fast-fail."""
+    _, idx = _client_and_index()
+    with pytest.raises(ValueError, match="dynamic_hybrid"):
+        idx.query("anything", agentic_search=True, dynamic_top_k=True)
+
+
 def test_agentic_search_include_answer_opt_in():
     """`include_answer=True` populates response.final_answer; default off."""
     question = os.environ.get(_QUESTION_ENV, _DEFAULT_QUESTION)

@@ -251,6 +251,7 @@ class Index:
         include_metadata: bool = False,
         include_vectors: bool = False,
         dynamic_hybrid: bool = False,
+        dynamic_top_k: bool = False,
         agentic_search: bool = False,
         return_hops: bool = False,
         include_answer: bool = False,
@@ -283,6 +284,16 @@ class Index:
                 returns the ranking directly — no ``alpha`` to tune, no
                 client-side fusion. Only valid on hybrid indexes, and
                 ``top_k`` must be <= 100.
+            dynamic_top_k: Managed Dynamic Top-K cutoff. When True, Dasein
+                predicts a per-query K (the smallest top-K of the alpha-
+                fused ranking that retains the gold) and clips your
+                results to ``min(top_k, K_pred)``. ``top_k`` stays a hard
+                ceiling. Drops downstream LLM token spend on easy
+                queries while preserving recall. Requires
+                ``dynamic_hybrid=True`` (the K head was trained on the
+                alpha-fused ranking and is only valid against it). The
+                external/portable variant lives at
+                ``Client.predict_dynamic_top_k(text, query_vector=...)``.
             agentic_search: When True, runs Dasein's managed multi-hop
                 pipeline against this index instead of a single retrieval.
                 Dasein decomposes ``text`` into a chain of sub-questions
@@ -294,11 +305,11 @@ class Index:
                 ``text``. This is a retrieval system, not a QA / RAG
                 chatbot: there is no natural-language "answer" returned.
                 Requires ``text``. All other retrieval kwargs (``mode``,
-                ``alpha``, ``dynamic_hybrid``, ``filter``, ``exact``,
-                ``phrase``, ``fuzzy``) apply to **every hop** — e.g. a
-                hybrid α=0.7 multi-hop run uses hybrid α=0.7 on each
-                sub-query. ``include_vectors`` is not supported in
-                agentic mode.
+                ``alpha``, ``dynamic_hybrid``, ``dynamic_top_k``,
+                ``filter``, ``exact``, ``phrase``, ``fuzzy``) apply to
+                **every hop** — e.g. a hybrid α=0.7 multi-hop run uses
+                hybrid α=0.7 on each sub-query. ``include_vectors`` is
+                not supported in agentic mode.
             return_hops: Only meaningful with ``agentic_search=True``.
                 When True, the response carries the full per-hop trace
                 in ``response.hops`` (sub-question text, fused ids /
@@ -318,6 +329,12 @@ class Index:
             raise ValueError("Either text or vector must be provided")
         if dynamic_hybrid and top_k > 100:
             raise ValueError("dynamic_hybrid requires top_k <= 100")
+        if dynamic_top_k and not dynamic_hybrid:
+            raise ValueError(
+                "dynamic_top_k requires dynamic_hybrid=True. The Dynamic "
+                "Top-K head was trained on the alpha-fused ranking and is "
+                "only valid against it; pair the toggles together."
+            )
         if agentic_search:
             return self._agentic_query(
                 text=text,
@@ -330,6 +347,7 @@ class Index:
                 fuzzy=fuzzy,
                 alpha=alpha,
                 dynamic_hybrid=dynamic_hybrid,
+                dynamic_top_k=dynamic_top_k,
                 include_vectors=include_vectors,
                 return_hops=return_hops,
                 include_answer=include_answer,
@@ -365,6 +383,8 @@ class Index:
             payload["include_metadata"] = True
         if dynamic_hybrid:
             payload["dynamic_hybrid"] = True
+        if dynamic_top_k:
+            payload["dynamic_top_k"] = True
         if include_vectors:
             payload["include_vectors"] = True
 
@@ -413,6 +433,7 @@ class Index:
         fuzzy: bool,
         alpha: float,
         dynamic_hybrid: bool,
+        dynamic_top_k: bool,
         include_vectors: bool,
         return_hops: bool,
         include_answer: bool,
@@ -444,6 +465,10 @@ class Index:
             )
         if dynamic_hybrid and top_k > 100:
             raise ValueError("dynamic_hybrid requires top_k <= 100")
+        if dynamic_top_k and not dynamic_hybrid:
+            raise ValueError(
+                "agentic_search + dynamic_top_k requires dynamic_hybrid=True"
+            )
 
         payload: dict[str, Any] = {
             "question": text,
@@ -462,6 +487,7 @@ class Index:
             "mode": mode,
             "alpha": alpha,
             "dynamic_hybrid": bool(dynamic_hybrid),
+            "dynamic_top_k": bool(dynamic_top_k),
             "exact": bool(exact),
             "phrase": bool(phrase),
             "fuzzy": bool(fuzzy),
