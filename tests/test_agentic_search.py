@@ -190,7 +190,9 @@ def test_agentic_return_hops_exposes_full_trace(server):
     assert len(resp.hops) == 3
     assert resp.hops[2]["sub_query_text"] == "subq3"
     assert resp.chain == ["#1", "#2 of #1", "#3 of #2"]
-    # request must have asked the server to be verbose so hops come back
+    # SDK always sends verbose=True (we need the final hop's fused_ids
+    # to materialize response.results); return_hops only controls
+    # whether we expose the per-hop trace to the caller.
     assert _last_body()["verbose"] is True
 
 
@@ -198,9 +200,13 @@ def test_agentic_return_hops_default_false_hides_trace(server):
     _stub_multihop_response("ix1")
     idx = _make_idx(server)
     resp = idx.query("foo", agentic_search=True)
+    # User-facing hops are hidden, but the SDK still asked for them
+    # over the wire so it could shape `results`.
     assert resp.hops is None
-    # we still send verbose=False, server omits "hops" anyway
-    assert _last_body()["verbose"] is False
+    assert _last_body()["verbose"] is True
+    # results were still populated from the last hop's fused_ids
+    assert len(resp.results) == 2
+    assert resp.results[0].id == "docA"
 
 
 # ── validation: incompatible combos must fail loud ─────────────────────────

@@ -433,7 +433,12 @@ class Index:
         payload: dict[str, Any] = {
             "question": text,
             "top_k": top_k,
-            "verbose": bool(return_hops),
+            # Always ask the server for per-hop detail — we need the
+            # final hop's fused_ids/scores/texts/metadata to populate
+            # response.results. `return_hops` only controls whether we
+            # expose the per-hop trace to the *user*; we keep it server-
+            # side-on internally to materialize the final ranking.
+            "verbose": True,
             "mode": mode,
             "alpha": alpha,
             "dynamic_hybrid": bool(dynamic_hybrid),
