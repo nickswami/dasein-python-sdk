@@ -4,8 +4,8 @@
 
 # Dasein
 
-**The managed vector index that compresses 12×, queries 10× faster, and lifts R@10 by +22pt over static hybrid.**
-Agentic multi-hop search • Dynamic Top-K cutoff • Hybrid dense + BM25 • Per-query dynamic α fusion • Zero embedding infrastructure
+**Multi-hop retrieval in ~1 second. Higher recall. Less LLM bloat.**
+Agentic Search · Dynamic Top-K · Dynamic Hybrid · Hybrid dense + BM25 · Managed embedding
 
 [![PyPI](https://img.shields.io/pypi/v/dasein-ai.svg?color=4b3ed6&label=pypi)](https://pypi.org/project/dasein-ai/)
 [![Python](https://img.shields.io/pypi/pyversions/dasein-ai.svg?color=4b3ed6)](https://pypi.org/project/dasein-ai/)
@@ -14,25 +14,21 @@ Agentic multi-hop search • Dynamic Top-K cutoff • Hybrid dense + BM25 • Pe
 [![Benchmarks](https://img.shields.io/badge/VectorDBBench-results-4b3ed6)](https://results.daseinai.ai/results)
 [![Docs](https://img.shields.io/badge/docs-daseinai.ai-4b3ed6)](https://www.daseinai.ai/)
 
-[Live Demo](https://demo.daseinai.ai) • [Quick Start](#quick-start) • [Agentic Search](#agentic-search--managed-multi-hop) • [Dynamic Top-K](#dynamic-top-k--per-query-cutoff) • [Hybrid Search](#hybrid-search) • [Dynamic Hybrid](#dynamic-hybrid--let-dasein-pick-the-balance) • [Query Batch](#query-batch) • [API Reference](#api-reference) • [Benchmarks](https://results.daseinai.ai/results) • [Dynamic Hybrid Results](dynamic_hybrid_results/dynamic_hybrid_summary.md)
+[Live Demo](https://demo.daseinai.ai) • [Quick Start](#quick-start) • [Agentic Search](#agentic-search) • [Dynamic Top-K](#dynamic-top-k) • [Dynamic Hybrid](#dynamic-hybrid) • [Hybrid Search](#hybrid-search) • [Query Batch](#query-batch) • [API Reference](#api-reference) • [Benchmarks](https://results.daseinai.ai/results) • [Dynamic Hybrid Results](dynamic_hybrid_results/dynamic_hybrid_summary.md)
 
 </div>
 
 ---
 
-Python SDK for the [Dasein](https://www.daseinai.ai/) managed vector index service.
+The managed vector index that does the hard parts of retrieval for you. Agentic decomposition, per-query α fusion, and Dynamic Top-K — all on a single `index.query()` call. Built for teams tired of paying their LLM provider to read ten mediocre chunks when two would have done it.
 
-Send raw text in, get ranked results out. One method call — Dasein runs the embedding, compression, HNSW, BM25, and fusion.
+**Higher recall.** [Dynamic Hybrid](dynamic_hybrid_results/dynamic_hybrid_summary.md) picks the dense/BM25 α **per query** instead of one static α tuned to your average query. **FEVER R@10 0.85 → 0.97. NQ R@10 0.69 → 0.92.** Beats best-static-α across FiQA, FEVER, SciFact, and NQ on R@10, MRR, and mean rank — without the R@1 collapse static α always pays. Across encoders (MiniLM 22M to E5-Mistral 7B), no retraining.
 
-**Higher quality.** [Dynamic Hybrid](dynamic_hybrid_results/dynamic_hybrid_summary.md) picks the dense/BM25 fusion α **per query** instead of the industry-standard single fixed α. It beats best-static-α across FiQA, FEVER, SciFact, and NQ on R@10, MRR, and mean rank — without the R@1 collapse that fixed α always pays. On FEVER the Dasein-native variant lifts R@10 from **0.85 → 0.97**; on NQ from **0.69 → 0.92**. Works across any encoder (MiniLM 22M to E5-Mistral 7B).
+**Less LLM bloat.** Dynamic Top-K trims to the smallest set of results that still retains the gold. 1–3 results on easy queries, the full budget on hard ones — your `top_k` stays a hard ceiling, Dasein only ever clips down. Drops downstream token spend without giving up recall. Pairs with Agentic Search for **compounding savings on every hop**.
 
-**Smaller.** Proprietary compression: **12× smaller than fp32** while preserving **99.96%** of recall. Full fp32-quality index fits in an order of magnitude less RAM — no SSD on the hot path.
+**In ~1 second.** Agentic Search runs 3–5 retrieval hops with intermediate reasoning server-side, then returns the final-hop ranking — in roughly the time most RAG stacks take for a single-hop top-10. Same response shape as a normal `index.query()`.
 
-**Faster.** **10× faster queries** than typical production setups in our [VectorDBBench runs](https://results.daseinai.ai/results). The compression *is* the speedup — smaller footprint keeps more of your index hot.
-
-**Agentic.** Add `agentic_search=True` to any `index.query()` call and Dasein decomposes your question into a chain of sub-questions, runs 3–5 hops of retrieval against your own index, and returns the final-hop ranking — typically in **~1 s** end-to-end. Same response shape as a normal query (a ranked list); the multi-hop reasoning happens entirely server-side. Your retrieval settings (mode, alpha, dynamic hybrid, filter, BM25 modifiers) apply to every hop.
-
-**Dynamic Top-K.** Add `dynamic_top_k=True` (alongside `dynamic_hybrid=True`) and Dasein predicts a per-query cutoff for the kept set — the smallest top-K of the alpha-fused ranking that still retains the gold. Easy queries return 1–3 results; hard queries get the full budget. **Drops downstream LLM token spend** without giving up recall. Same toggle works under `agentic_search=True` (every hop). For BYO retrieval stacks, `client.predict_dynamic(text, query_vector=...)` returns α + both K cutoffs in one call.
+**Smaller, faster index.** **12× smaller than fp32** with 99.96% recall preserved. **10× faster queries** in our [VectorDBBench runs](https://results.daseinai.ai/results). The compression *is* the speedup — smaller footprint keeps more of your index hot.
 
 ## Install
 
@@ -93,7 +89,7 @@ index = client.create_index("my-docs", index_type="hybrid", model="bge-large-en-
 index = client.create_index("my-docs", index_type="dense", model="bge-large-en-v1.5")
 ```
 
-## Agentic Search — managed multi-hop
+## Agentic Search
 
 Some queries can't be served by a single similarity match. *"What 2010 dream-heist movie was directed by the filmmaker who made the space wormhole movie starring the actor who played the 'Alright, alright, alright' guy in Dazed and Confused?"* needs a **chain** of retrievals — first narrow to the actor, then to the wormhole movie, then to its director, then to their 2010 dream-heist movie.
 
@@ -183,7 +179,7 @@ results = index.query("AAPL earnings", top_k=10, mode="hybrid", alpha=0.3)  # le
 
 Hybrid mode is strongest on queries with specific keywords, entity names, or codes where pure semantic search loses signal. Dense mode is better for abstract, conceptual queries. You choose per query. The keyword features (`exact`, `phrase`, `fuzzy`) refine hybrid results — use them when you need precise keyword control. The `alpha` parameter lets you tune the balance between dense and BM25 ranking in the fusion step.
 
-### Dynamic hybrid — let Dasein pick the balance
+## Dynamic Hybrid
 
 Tuning `alpha` per query is tedious and fragile. On hybrid indexes you can
 hand the decision off to Dasein:
@@ -204,7 +200,7 @@ per-query K cutoffs are available as a single managed call —
 [`client.predict_dynamic`](#byo-retrieval-stack--clientpredict_dynamic)
 — described below.
 
-## Dynamic Top-K — per-query cutoff
+## Dynamic Top-K
 
 A fixed `top_k=10` is a worst-case budget. Easy queries don't need 10
 results — the gold lands at rank 1. Hard queries occasionally do.
@@ -367,15 +363,17 @@ while True:
 
 ## Features
 
-**Agentic search** — Set `agentic_search=True` on `index.query()` and Dasein runs a managed multi-hop pipeline against your own index: sub-question decomposition, 3–5 hops of retrieval, intermediate reading, and a parsed natural-language answer, in ~1.0–1.6 s. All your retrieval settings (mode, alpha, dynamic hybrid, filter, BM25 modifiers) apply to every hop.
+**Agentic Search** — `agentic_search=True` on `index.query()` runs a managed multi-hop pipeline against your own index: sub-question decomposition, 3–5 retrieval hops, intermediate reading, in ~1.0–1.6 s. All your retrieval settings (mode, alpha, Dynamic Hybrid, Dynamic Top-K, filter, BM25 modifiers) apply to every hop.
+
+**Dynamic Top-K** — `dynamic_top_k=True` (alongside `dynamic_hybrid=True`) trims the result set per query — 1–3 results on easy queries, full budget on hard ones. Drops downstream LLM token spend without giving up recall. Works under `agentic_search=True` for compounding savings on every hop.
+
+**Dynamic Hybrid** — `dynamic_hybrid=True` lets Dasein pick the dense/BM25 α per query on hybrid indexes. For BYO retrieval stacks, `client.predict_dynamic(text, query_vector=...)` returns the same per-query α plus the matched K cutoffs in one call. Across encoders, no retraining.
+
+**Hybrid Search** — Switch between dense and hybrid retrieval per query. No reindexing, no separate BM25 infrastructure.
 
 **Managed embedding** — Pass raw text, we embed with open-source models (BGE, Nomic, E5, GTE). No embedding infrastructure to manage.
 
 **Bring your own vectors** — Already have embeddings? Pass them directly with any dimension.
-
-**Hybrid search** — Switch between dense and hybrid retrieval per query. No reindexing, no separate BM25 infrastructure.
-
-**Dynamic hybrid** — Let Dasein pick the dense/BM25 balance per query on hybrid indexes (`dynamic_hybrid=True`). For BYO retrieval stacks, `client.predict_dynamic(text, query_vector=...)` returns the same per-query α (plus the matched K cutoffs). Works across encoders, no retraining required.
 
 **Metadata filtering** — Attach metadata to documents and filter at query time with operators like `$in`, `$ne`, `$gte`, `$lte`, and `$or`. True pre-filters with no recall penalty.
 
