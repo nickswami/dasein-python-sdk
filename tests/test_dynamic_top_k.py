@@ -8,10 +8,13 @@ dynamic_top_k=True)``. We assert the body sent to the API carries
 ``dynamic_top_k=true`` only when the caller asked for it, and that the
 SDK enforces the ``dynamic_hybrid=True`` pairing client-side.
 
-Surface 2 (BYO retriever): ``Client.predict_dynamic_top_k(text,
-query_vector=...)``. We assert it hits ``/v1/predict_dynamic_top_k``
-with the right body and shapes the response into a
-:class:`DynamicTopKResult`.
+Surface 2 (BYO retriever): ``Client.predict_dynamic(text,
+query_vector=...)``. One unified call returns ``alpha + top_k_dense +
+top_k_hybrid`` as a :class:`DynamicPrediction`. We assert it hits
+``/v1/predict_dynamic_top_k`` (the internal endpoint URL — the SDK
+exposes one surface; the URL is implementation detail) with the right
+body and shapes the response correctly, including the alpha-flip into
+the public Pinecone / Weaviate convention.
 """
 from __future__ import annotations
 
@@ -21,7 +24,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import pytest
 
-from dasein import Client, DynamicTopKResult
+from dasein import Client, DynamicPrediction
 from dasein.index import Index
 
 
@@ -182,13 +185,14 @@ def test_agentic_dynamic_top_k_requires_dynamic_hybrid(server):
                   dynamic_top_k=True)
 
 
-# ── BYO surface: client.predict_dynamic_top_k ──────────────────────────────
+# ── BYO surface: client.predict_dynamic ────────────────────────────────────
 
-def test_predict_dynamic_top_k_returns_struct(server):
+def test_predict_dynamic_returns_struct(server):
     # Server emits alpha in the internal "alpha = BM25 weight" frame; the
     # SDK flips it into the public Pinecone / Weaviate convention
     # (alpha = dense weight) on the way out — so 0.42 over the wire shows
-    # up to the caller as 1 - 0.42 = 0.58.
+    # up to the caller as 1 - 0.42 = 0.58. Both K values pass through
+    # untouched.
     _Handler._responses["/v1/predict_dynamic_top_k"] = {
         "status": 200,
         "body": {
@@ -199,39 +203,38 @@ def test_predict_dynamic_top_k_returns_struct(server):
         },
     }
     client = Client(api_key="dsk_test", base_url=server, max_retries=0)
-    r = client.predict_dynamic_top_k("who founded apple?",
-                                      query_vector=[0.1, 0.2, 0.3])
-    assert isinstance(r, DynamicTopKResult)
+    r = client.predict_dynamic("who founded apple?",
+                                query_vector=[0.1, 0.2, 0.3])
+    assert isinstance(r, DynamicPrediction)
     assert r.alpha == pytest.approx(0.58)
     assert r.top_k_dense == 3
     assert r.top_k_hybrid == 5
 
-    # Body forwarded as expected
     body = _last_body()
     assert body["text"] == "who founded apple?"
     assert body["query_vector"] == [0.1, 0.2, 0.3]
 
 
-def test_predict_dynamic_top_k_omits_query_vector_when_none(server):
+def test_predict_dynamic_omits_query_vector_when_none(server):
     _Handler._responses["/v1/predict_dynamic_top_k"] = {
         "status": 200,
         "body": {"alpha": 0.5, "top_k_dense": 4, "top_k_hybrid": 8,
                  "usage_current_month": 1},
     }
     client = Client(api_key="dsk_test", base_url=server, max_retries=0)
-    r = client.predict_dynamic_top_k("text only", model_id="bge-large-en-v1.5")
+    r = client.predict_dynamic("text only", model_id="bge-large-en-v1.5")
     assert r.top_k_hybrid == 8
     body = _last_body()
     assert "query_vector" not in body
     assert body["model_id"] == "bge-large-en-v1.5"
 
 
-def test_predict_dynamic_top_k_rejects_empty_text(server):
+def test_predict_dynamic_rejects_empty_text(server):
     client = Client(api_key="dsk_test", base_url=server, max_retries=0)
     with pytest.raises(ValueError, match="non-empty"):
-        client.predict_dynamic_top_k("")
+        client.predict_dynamic("")
     with pytest.raises(ValueError, match="non-empty"):
-        client.predict_dynamic_top_k("   ")
+        client.predict_dynamic("   ")
 
 
 if __name__ == "__main__":

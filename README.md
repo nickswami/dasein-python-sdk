@@ -32,7 +32,7 @@ Send raw text in, get ranked results out. One method call — Dasein runs the em
 
 **Agentic.** Add `agentic_search=True` to any `index.query()` call and Dasein decomposes your question into a chain of sub-questions, runs 3–5 hops of retrieval against your own index, and returns the final-hop ranking — typically in **~1 s** end-to-end. Same response shape as a normal query (a ranked list); the multi-hop reasoning happens entirely server-side. Your retrieval settings (mode, alpha, dynamic hybrid, filter, BM25 modifiers) apply to every hop.
 
-**Dynamic Top-K.** Add `dynamic_top_k=True` (alongside `dynamic_hybrid=True`) and Dasein predicts a per-query cutoff for the kept set — the smallest top-K of the alpha-fused ranking that still retains the gold. Easy queries return 1–3 results; hard queries get the full budget. **Drops downstream LLM token spend** without giving up recall. Same toggle works under `agentic_search=True` (every hop). For BYO retrieval stacks, the standalone `client.predict_dynamic_top_k(text, query_vector=...)` returns the same K + α scalars to apply client-side.
+**Dynamic Top-K.** Add `dynamic_top_k=True` (alongside `dynamic_hybrid=True`) and Dasein predicts a per-query cutoff for the kept set — the smallest top-K of the alpha-fused ranking that still retains the gold. Easy queries return 1–3 results; hard queries get the full budget. **Drops downstream LLM token spend** without giving up recall. Same toggle works under `agentic_search=True` (every hop). For BYO retrieval stacks, `client.predict_dynamic(text, query_vector=...)` returns α + both K cutoffs in one call.
 
 ## Install
 
@@ -199,31 +199,10 @@ ignored. Only available on hybrid indexes. `top_k` must be `<= 100`.
 
 No extra setup. No retraining on your data. Works across encoders.
 
-### Managed fusion weight for your own stack — `client.predict_alpha`
-
-If you run your own dense + BM25 pipeline and just want a better per-query
-fusion weight, call Dasein directly — no index required. **Pass the same
-dense query vector you're about to retrieve with**, so the alpha matches
-your encoder's geometry:
-
-```python
-# embed the query in YOUR encoder's space (whatever you already use)
-qvec = my_encoder.encode("who founded apple?")
-
-alpha = client.predict_alpha("who founded apple?", query_vector=qvec)
-# blend your own rankings at this alpha
-fused = rrf_fuse(my_dense_hits, my_bm25_hits, alpha=alpha)
-```
-
-Returns a `float` in `[0.0, 1.0]` (1 = all dense, 0 = all BM25 —
-matches the Pinecone / Weaviate convention). Works across encoders —
-just pass the vector from whichever encoder you use.
-
-`query_vector` is strongly recommended. If you omit it, Dasein will embed
-`text` with its default model and return an alpha tied to *that* model's
-geometry, which will not line up with your own retriever.
-
-Free plans: 1,000 calls per month. Paid hybrid plans: unlimited.
+If you run your own dense + BM25 pipeline, the Dasein-native α plus
+per-query K cutoffs are available as a single managed call —
+[`client.predict_dynamic`](#byo-retrieval-stack--clientpredict_dynamic)
+— described below.
 
 ## Dynamic Top-K — per-query cutoff
 
@@ -267,34 +246,43 @@ response = index.query(
 `dynamic_top_k=True` requires `dynamic_hybrid=True` — the cutoff was
 trained on the alpha-fused ranking and only makes sense applied to it.
 
-### On your own retrieval stack — `client.predict_dynamic_top_k`
+### BYO retrieval stack — `client.predict_dynamic`
 
-If you run your own dense + BM25 pipeline, hit Dasein for a per-query
-**K_dense**, **K_hybrid**, and **alpha** in one call — no index
-required. Apply whichever K matches your downstream ranking:
+If you run your own dense + BM25 pipeline, hit Dasein for the per-query
+**α + K_dense + K_hybrid** in **one** call. One HTTP round-trip, one
+GPU forward, three scalars — same model that powers the managed
+`dynamic_hybrid` and `dynamic_top_k` toggles. **Pass the same dense
+query vector you're about to retrieve with** so the prediction matches
+your encoder's geometry:
 
 ```python
+# embed the query in YOUR encoder's space (whatever you already use)
 qvec = my_encoder.encode("who founded apple?")
 
-r = client.predict_dynamic_top_k("who founded apple?", query_vector=qvec)
+p = client.predict_dynamic("who founded apple?", query_vector=qvec)
 
-# alpha-fused dense + BM25 path
-fused = rrf_fuse(my_dense_hits, my_bm25_hits, alpha=r.alpha)
-kept  = fused[: r.top_k_hybrid]
+# hybrid stack — fuse with α, clip to K_hybrid
+fused = rrf_fuse(my_dense_hits, my_bm25_hits, alpha=p.alpha)
+kept  = fused[: p.top_k_hybrid]
 
-# pure dense path
-kept_dense = my_dense_hits[: r.top_k_dense]
+# pure-dense stack — ignore α, clip to K_dense
+kept_dense = my_dense_hits[: p.top_k_dense]
 ```
 
-Returns a `DynamicTopKResult(top_k_dense, top_k_hybrid, alpha)`. Both Ks
-are integers in `[1, 10]`. Works across encoders — just pass the vector
-from whichever encoder you use.
+Returns a `DynamicPrediction(alpha, top_k_dense, top_k_hybrid)`:
 
-`query_vector` is strongly recommended for the same reason as
-`predict_alpha`: the prediction is tied to your encoder's geometry.
+* `alpha` is a `float` in `[0.0, 1.0]` — **1.0 = all dense, 0.0 = all
+  BM25** (Pinecone / Weaviate convention). Drop into your RRF / convex
+  combination as the dense weight.
+* `top_k_dense` and `top_k_hybrid` are integers in `[1, 10]` —
+  upper-bound suggestions you clip to (`min(your_top_k, p.top_k_*)`).
 
-Free plans: 1,000 calls per month (shared with `predict_alpha`). Paid
-hybrid plans: unlimited.
+Works across encoders. `query_vector` is strongly recommended — if you
+omit it, Dasein embeds `text` with its default model and the prediction
+is tied to *that* model's geometry, which won't line up with your own
+retriever.
+
+Free plans: 1,000 calls per month. Paid hybrid plans: unlimited.
 
 ## Metadata
 
@@ -387,7 +375,7 @@ while True:
 
 **Hybrid search** — Switch between dense and hybrid retrieval per query. No reindexing, no separate BM25 infrastructure.
 
-**Dynamic hybrid** — Let Dasein pick the dense/BM25 balance per query on hybrid indexes (`dynamic_hybrid=True`), or call `client.predict_alpha(text, query_vector=...)` to get the same weight for your own hybrid stack. Works across encoders, no retraining required.
+**Dynamic hybrid** — Let Dasein pick the dense/BM25 balance per query on hybrid indexes (`dynamic_hybrid=True`). For BYO retrieval stacks, `client.predict_dynamic(text, query_vector=...)` returns the same per-query α (plus the matched K cutoffs). Works across encoders, no retraining required.
 
 **Metadata filtering** — Attach metadata to documents and filter at query time with operators like `$in`, `$ne`, `$gte`, `$lte`, and `$or`. True pre-filters with no recall penalty.
 
@@ -471,24 +459,30 @@ index = client.get_index("index_id")
 client.delete_index("index_id")
 ```
 
-### Predict Alpha (managed fusion weight)
+### Predict Dynamic (per-query retrieval plan)
 
 ```python
-alpha = client.predict_alpha(
+p = client.predict_dynamic(
     text="who founded apple?",
     query_vector=my_dense_vec,  # strongly recommended: your encoder's output
     model_id=None,              # used to embed `text` ONLY if query_vector is None
 )
+# p.alpha          : float in [0.0, 1.0]  (1=dense, 0=BM25)
+# p.top_k_dense    : int   in [1, 10]
+# p.top_k_hybrid   : int   in [1, 10]
 ```
 
-Returns a `float` in `[0.0, 1.0]` to use as the dense/BM25 blend for your
-own hybrid stack. No Dasein index required.
+Returns a `DynamicPrediction(alpha, top_k_dense, top_k_hybrid)` — one
+HTTP call, one GPU forward, three scalars. Drop `alpha` into your
+RRF / convex combination as the dense weight; clip your candidate set
+to `top_k_dense` (pure-dense stack) or `top_k_hybrid` (hybrid stack).
+No Dasein index required.
 
-**Pass your own `query_vector`** so the returned alpha is valid for your
-retriever. If omitted, Dasein will embed `text` with its default encoder
-and the alpha will only be meaningful for that encoder's geometry.
+**Pass your own `query_vector`** so the prediction is valid for your
+retriever. If omitted, Dasein embeds `text` with its default encoder
+and the result will only be meaningful for that encoder's geometry.
 
-See [Managed fusion weight](#managed-fusion-weight-for-your-own-stack--clientpredict_alpha)
+See [BYO retrieval stack — `client.predict_dynamic`](#byo-retrieval-stack--clientpredict_dynamic)
 for usage and quotas.
 
 ### Cross-Index Query Batch

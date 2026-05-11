@@ -1,7 +1,7 @@
 from dasein.client import Client
 from dasein.index import Index, multihop_external
 from dasein.types import (
-    QueryResult, QueryResponse, UpsertItem, IndexInfo, DynamicTopKResult,
+    QueryResult, QueryResponse, UpsertItem, IndexInfo, DynamicPrediction,
 )
 from dasein.exceptions import (
     DaseinError,
@@ -13,7 +13,7 @@ from dasein.exceptions import (
     DaseinBuildError,
 )
 
-__version__ = "0.4.12"
+__version__ = "0.4.13"
 __all__ = [
     "Client",
     "Index",
@@ -22,7 +22,7 @@ __all__ = [
     "QueryResponse",
     "UpsertItem",
     "IndexInfo",
-    "DynamicTopKResult",
+    "DynamicPrediction",
     "DaseinError",
     "DaseinUnavailableError",
     "DaseinRateLimitError",

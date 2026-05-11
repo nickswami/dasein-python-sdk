@@ -300,7 +300,7 @@ class Index:
                 ``dynamic_hybrid=True`` (the K head was trained on the
                 alpha-fused ranking and is only valid against it). The
                 external/portable variant lives at
-                ``Client.predict_dynamic_top_k(text, query_vector=...)``.
+                ``Client.predict_dynamic(text, query_vector=...)``.
             agentic_search: When True, runs Dasein's managed multi-hop
                 pipeline against this index instead of a single retrieval.
                 Dasein decomposes ``text`` into a chain of sub-questions

@@ -21,7 +21,7 @@ from dasein.types import (
     IndexInfo,
     QueryResult,
     QueryResponse,
-    DynamicTopKResult,
+    DynamicPrediction,
     _alpha_server_to_user,
     _alpha_user_to_server,
 )
@@ -43,7 +43,7 @@ except ImportError:
 DEFAULT_BASE_URL = "https://api.daseinai.ai"
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_RETRIES = 3
-__version__ = "0.4.12"
+__version__ = "0.4.13"
 
 
 class Client:
@@ -241,45 +241,62 @@ class Client:
         """Delete an index permanently."""
         self._request("DELETE", f"/indexes/{index_id}")
 
-    def predict_alpha(
+    def predict_dynamic(
         self,
         text: str,
         query_vector: list[float] | None = None,
         model_id: str | None = None,
-    ) -> float:
-        """Managed per-query hybrid-fusion weight.
+    ) -> DynamicPrediction:
+        """Managed per-query retrieval-plan prediction (BYO-retriever).
 
-        Call this from *any* search stack — you don't need a Dasein index.
-        Dasein returns ``alpha ∈ [0.0, 1.0]`` for the given query: blend
-        your own dense and BM25 rankings at that weight and ship the fused
-        list. Convention matches Pinecone / Weaviate:
+        One HTTP call, one GPU forward, three scalars. Dasein looks at
+        the query and returns the **fusion weight** it would apply
+        (Dynamic Hybrid) plus the **per-query top-K cutoffs** it would
+        apply (Dynamic Top-K), so a BYO stack can mirror the managed
+        behavior on its own dense + BM25 rankings.
 
-        - 1.0  →  use only your dense ranking
-        - 0.0  →  use only your BM25 ranking
-        - 0.5  →  equal blend
+        Returns a :class:`DynamicPrediction` with three fields:
+
+        * ``alpha`` — fusion weight in ``[0.0, 1.0]``. **1.0 = pure
+          dense, 0.0 = pure BM25, 0.5 = even blend** (Pinecone /
+          Weaviate convention). Use in your RRF / convex combination.
+        * ``top_k_dense`` — top-K cutoff for callers using the **dense
+          ranking only**.
+        * ``top_k_hybrid`` — top-K cutoff for callers using the
+          **alpha-fused dense + BM25 ranking** (paired with ``alpha``).
+
+        Both K values are integers in ``[1, 10]``. They're an
+        upper-bound suggestion — clamp your retrieval to
+        ``min(your_top_k, top_k_*)``.
 
         Typical usage::
 
             qvec = my_encoder.encode("who founded apple?")
-            alpha = client.predict_alpha("who founded apple?", query_vector=qvec)
-            # alpha=1 is pure dense, alpha=0 is pure BM25
-            fused = rrf_fuse(dense_hits, bm25_hits, alpha=alpha)
+            p = client.predict_dynamic("who founded apple?", query_vector=qvec)
+
+            # hybrid stack
+            fused = rrf_fuse(dense_hits, bm25_hits, alpha=p.alpha)
+            kept  = fused[: p.top_k_hybrid]
+
+            # pure-dense stack — ignore alpha, just trim
+            kept_dense = my_dense_hits[: p.top_k_dense]
 
         Args:
             text: The raw query text.
             query_vector: The dense query embedding from YOUR encoder.
-                Strongly recommended — the returned alpha is tied to the
-                geometry of this vector, so for alpha to be valid for
-                your retriever you must pass the same vector you're about
-                to retrieve with. If omitted, Dasein embeds ``text`` with
-                its default model and the alpha will only be meaningful
-                for that model's geometry. Counts against your embed
-                token quota when omitted.
+                Strongly recommended — the prediction is tied to the
+                geometry of this vector, so for the scalars to be
+                valid for your retriever you must pass the same
+                vector you're about to retrieve with. If omitted,
+                Dasein embeds ``text`` with its default model and the
+                result will only be meaningful for that model's
+                geometry. Counts against your embed token quota when
+                omitted.
             model_id: Optional override for the embedding model when
                 ``query_vector`` is not supplied. Ignored otherwise.
 
         Returns:
-            float in [0.0, 1.0].
+            :class:`DynamicPrediction` ``(alpha, top_k_dense, top_k_hybrid)``.
 
         Quota:
             Free plans: 1,000 calls per month.
@@ -292,82 +309,17 @@ class Client:
             payload["query_vector"] = list(query_vector)
         if model_id is not None:
             payload["model_id"] = model_id
-        resp = self._request("POST", "/v1/predict_alpha", json=payload)
-        data = resp.json()
-        # Flip server convention (alpha = BM25 weight) into the standard
-        # public convention (alpha = dense weight). See _alpha_user_to_server.
-        return _alpha_server_to_user(float(data["alpha"]))
-
-    def predict_dynamic_top_k(
-        self,
-        text: str,
-        query_vector: list[float] | None = None,
-        model_id: str | None = None,
-    ) -> DynamicTopKResult:
-        """Managed per-query Dynamic Top-K predictor.
-
-        Call this from *any* search stack — you don't need a Dasein index.
-        Dasein returns a per-query ``top_k`` cap (the smallest top-K of
-        your ranking that still retains the gold) plus the ``alpha`` from
-        :meth:`predict_alpha`. Use the appropriate ``top_k_*`` to **trim
-        your candidate set** before paying the downstream cost (LLM
-        tokens, cross-encoder reranking, network, …).
-
-        Two K values are returned because the gold lands at different
-        ranks under different rankings:
-
-        * ``top_k_dense``  — for callers who will use the **dense ranking
-          only**.
-        * ``top_k_hybrid`` — for callers who will use the **alpha-fused
-          dense + BM25 ranking** with the returned ``alpha``.
-
-        Both K's are integers in ``[1, 10]`` (the keep heads were trained
-        against that budget). They are an **upper bound suggestion** —
-        clamp your retrieval to ``min(your_top_k, top_k_*)``.
-
-        Typical usage::
-
-            qvec = my_encoder.encode("who founded apple?")
-            r = client.predict_dynamic_top_k(
-                "who founded apple?", query_vector=qvec,
-            )
-            fused = rrf_fuse(dense_hits, bm25_hits, alpha=r.alpha)
-            kept = fused[:r.top_k_hybrid]
-
-        Args:
-            text: The raw query text.
-            query_vector: The dense query embedding from YOUR encoder.
-                Strongly recommended — the prediction is tied to the
-                geometry of this vector, so for the K's to be valid for
-                your retriever you must pass the same vector you're
-                about to retrieve with. If omitted, Dasein embeds
-                ``text`` with its default model and the result will only
-                be meaningful for that model's geometry. Counts against
-                your embed token quota when omitted.
-            model_id: Optional override for the embedding model when
-                ``query_vector`` is not supplied. Ignored otherwise.
-
-        Returns:
-            :class:`DynamicTopKResult` ``(top_k_dense, top_k_hybrid, alpha)``.
-
-        Quota:
-            Free plans: 1,000 calls per month (shared with
-            ``predict_alpha``).
-            Paid hybrid plans: unlimited.
-        """
-        if not text or not text.strip():
-            raise ValueError("text must be a non-empty string")
-        payload: dict[str, Any] = {"text": text}
-        if query_vector is not None:
-            payload["query_vector"] = list(query_vector)
-        if model_id is not None:
-            payload["model_id"] = model_id
+        # Backed by /v1/predict_dynamic_top_k under the hood — same
+        # AlphaKeepMLP forward, same response shape ({alpha, top_k_dense,
+        # top_k_hybrid}). The endpoint URL is internal; the SDK exposes
+        # one unified surface so callers don't have to think about
+        # /predict_alpha vs /predict_dynamic_top_k.
         resp = self._request("POST", "/v1/predict_dynamic_top_k", json=payload)
         data = resp.json()
-        return DynamicTopKResult(
+        return DynamicPrediction(
+            alpha=_alpha_server_to_user(float(data["alpha"])),
             top_k_dense=int(data["top_k_dense"]),
             top_k_hybrid=int(data["top_k_hybrid"]),
-            alpha=_alpha_server_to_user(float(data["alpha"])),
         )
 
     def query_batch(

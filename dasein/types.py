@@ -36,8 +36,9 @@ def _alpha_user_to_server(alpha: float) -> float:
 
 def _alpha_server_to_user(alpha: float) -> float:
     """Convert a server-side alpha (1=BM25) into the public convention
-    (1=dense). Used when surfacing scalars from /v1/predict_alpha and
-    /v1/predict_dynamic_top_k to the caller."""
+    (1=dense). Used when surfacing the alpha scalar from
+    /v1/predict_dynamic_top_k (the unified predict_dynamic backend)
+    to the caller."""
     return 1.0 - float(alpha)
 
 
@@ -120,30 +121,32 @@ class QueryResponse:
 
 
 @dataclass
-class DynamicTopKResult:
-    """Per-query Dynamic Top-K prediction (BYO-retriever surface).
+class DynamicPrediction:
+    """Per-query retrieval-plan prediction (BYO-retriever surface).
 
-    Returned by :meth:`Client.predict_dynamic_top_k`. Backed by the same
-    GPU forward as :meth:`Client.predict_alpha`, so ``alpha`` is included
-    "for free" — apply whichever scalars match your downstream pipeline.
+    Returned by :meth:`Client.predict_dynamic`. One GPU forward, one
+    HTTP call, three scalars: the per-query fusion weight Dasein would
+    use, plus the per-query top-K cutoffs to apply downstream. Apply
+    whichever subset matches your stack — pure-dense callers ignore
+    ``alpha`` and use ``top_k_dense``; hybrid callers fuse with
+    ``alpha`` and clip to ``top_k_hybrid``.
 
-    * ``top_k_dense`` — smallest top-K to retrieve when you're going to
-      use the **dense ranking only**.
-    * ``top_k_hybrid`` — smallest top-K to retrieve when you're going to
-      use the **alpha-fused dense + BM25 ranking** (with the ``alpha``
-      below).
-    * ``alpha`` — the same per-query fusion weight returned by
-      :meth:`Client.predict_alpha`. In ``[0.0, 1.0]``: 1 = pure dense,
-      0 = pure BM25, 0.5 = even blend (Pinecone / Weaviate convention).
+    * ``alpha`` — per-query fusion weight in ``[0.0, 1.0]``. 1.0 = pure
+      dense, 0.0 = pure BM25, 0.5 = even blend (Pinecone / Weaviate
+      convention). Use this in your RRF / convex-combination fusion.
+    * ``top_k_dense`` — smallest top-K to retrieve when using the
+      **dense ranking only**.
+    * ``top_k_hybrid`` — smallest top-K to retrieve when using the
+      **alpha-fused dense + BM25 ranking** (paired with ``alpha``
+      above; the K head was trained against that fused ranking).
 
     Both K values are integers in ``[1, 10]`` (the keep heads were
-    trained against that budget). Use them as a **tighter bound** on
-    your retrieval ``top_k`` — i.e. ``effective_k = min(your_top_k,
-    top_k_hybrid)``.
+    trained against that budget). They're an **upper-bound suggestion**
+    — i.e. ``effective_k = min(your_top_k, top_k_*)``.
     """
+    alpha: float
     top_k_dense: int
     top_k_hybrid: int
-    alpha: float
 
 
 @dataclass
