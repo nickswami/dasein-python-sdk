@@ -5,7 +5,7 @@
 # Dasein
 
 **The managed vector index that compresses 12×, queries 10× faster, and lifts R@10 by +22pt over static hybrid.**
-Hybrid dense + BM25 • Per-query dynamic α fusion • Zero embedding infrastructure
+Agentic multi-hop search • Hybrid dense + BM25 • Per-query dynamic α fusion • Zero embedding infrastructure
 
 [![PyPI](https://img.shields.io/pypi/v/dasein-ai.svg?color=4b3ed6&label=pypi)](https://pypi.org/project/dasein-ai/)
 [![Python](https://img.shields.io/pypi/pyversions/dasein-ai.svg?color=4b3ed6)](https://pypi.org/project/dasein-ai/)
@@ -14,7 +14,7 @@ Hybrid dense + BM25 • Per-query dynamic α fusion • Zero embedding infrastru
 [![Benchmarks](https://img.shields.io/badge/VectorDBBench-results-4b3ed6)](https://results.daseinai.ai/results)
 [![Docs](https://img.shields.io/badge/docs-daseinai.ai-4b3ed6)](https://www.daseinai.ai/)
 
-[Live Demo](https://demo.daseinai.ai) • [Quick Start](#quick-start) • [Hybrid Search](#hybrid-search) • [Dynamic Hybrid](#dynamic-hybrid--let-dasein-pick-the-balance) • [Query Batch](#query-batch) • [API Reference](#api-reference) • [Benchmarks](https://results.daseinai.ai/results) • [Dynamic Hybrid Results](dynamic_hybrid_results/dynamic_hybrid_summary.md)
+[Live Demo](https://demo.daseinai.ai) • [Quick Start](#quick-start) • [Agentic Search](#agentic-search--managed-multi-hop) • [Hybrid Search](#hybrid-search) • [Dynamic Hybrid](#dynamic-hybrid--let-dasein-pick-the-balance) • [Query Batch](#query-batch) • [API Reference](#api-reference) • [Benchmarks](https://results.daseinai.ai/results) • [Dynamic Hybrid Results](dynamic_hybrid_results/dynamic_hybrid_summary.md)
 
 </div>
 
@@ -29,6 +29,8 @@ Send raw text in, get ranked results out. One method call — Dasein runs the em
 **Smaller.** Proprietary compression: **12× smaller than fp32** while preserving **99.96%** of recall. Full fp32-quality index fits in an order of magnitude less RAM — no SSD on the hot path.
 
 **Faster.** **10× faster queries** than typical production setups in our [VectorDBBench runs](https://results.daseinai.ai/results). The compression *is* the speedup — smaller footprint keeps more of your index hot.
+
+**Agentic.** Add `agentic_search=True` to any `index.query()` call and Dasein decomposes your question into a chain of sub-questions, runs 3–5 hops of retrieval + reading against your own index, and returns the final ranking plus a parsed natural-language answer — typically in **~1.0–1.6 s** end-to-end. Your retrieval settings (mode, alpha, dynamic hybrid, filter, BM25 modifiers) apply to every hop.
 
 ## Install
 
@@ -88,6 +90,51 @@ index = client.create_index("my-docs", index_type="hybrid", model="bge-large-en-
 # Dense-only index — only supports mode="dense"
 index = client.create_index("my-docs", index_type="dense", model="bge-large-en-v1.5")
 ```
+
+## Agentic Search — managed multi-hop
+
+Some questions can't be answered by retrieving a single passage. *"What 2010 dream-heist movie was directed by the filmmaker who made the space wormhole movie starring the actor who played the 'Alright, alright, alright' guy in Dazed and Confused?"* needs a **chain** of retrievals — first identify the actor, then the wormhole movie, then its director, then their 2010 dream-heist movie.
+
+Dasein bundles the whole pipeline — sub-question decomposition, multi-hop retrieval, intermediate reading, and answer extraction — behind a single flag on the same `index.query()` you already use:
+
+```python
+response = index.query(
+    "What 2010 dream-heist movie was directed by the filmmaker who made the "
+    "space wormhole movie starring the actor who played the 'Alright, alright, "
+    "alright' guy in Dazed and Confused?",
+    top_k=10,
+    agentic_search=True,
+)
+
+print(response.final_answer)        # → "Inception"
+for r in response.results:          # final-hop fused ranking, like normal query()
+    print(r.id, r.score, r.metadata)
+```
+
+The response is a regular `QueryResponse` — iterate it like any other query result. Two extra fields appear when `agentic_search=True`:
+
+- `response.final_answer` — the parsed natural-language answer to your original question
+- `response.n_hops` — how many hops the controller actually ran (3–5)
+
+Pass `return_hops=True` to get the full per-hop trace in `response.hops` (sub-question text, fused ids/scores/metadata/texts per hop, reader output, per-stage timings) — useful for debugging and for showing the user how the system reasoned.
+
+**All your retrieval settings still apply, on every hop.** Each hop runs the same retrieval mode you configured at the call site:
+
+```python
+# multi-hop with hybrid α=0.7 on every hop
+index.query("...", agentic_search=True, mode="hybrid", alpha=0.7)
+
+# multi-hop with managed dynamic hybrid on every hop
+index.query("...", agentic_search=True, mode="hybrid", dynamic_hybrid=True)
+
+# multi-hop with metadata pre-filter on every hop
+index.query("...", agentic_search=True, filter={"year": {"$gte": 2010}})
+
+# multi-hop with BM25 phrase + fuzzy modifiers on every hop
+index.query("...", agentic_search=True, mode="hybrid", phrase=True, fuzzy=True)
+```
+
+Requires `text=...` (vector-only is not supported — sub-question decomposition needs the natural-language question). End-to-end latency is typically **~1.0–1.6 s** for a warm 3–4 hop run on the live demo.
 
 ## Hybrid Search
 
@@ -238,6 +285,8 @@ while True:
 ```
 
 ## Features
+
+**Agentic search** — Set `agentic_search=True` on `index.query()` and Dasein runs a managed multi-hop pipeline against your own index: sub-question decomposition, 3–5 hops of retrieval, intermediate reading, and a parsed natural-language answer, in ~1.0–1.6 s. All your retrieval settings (mode, alpha, dynamic hybrid, filter, BM25 modifiers) apply to every hop.
 
 **Managed embedding** — Pass raw text, we embed with open-source models (BGE, Nomic, E5, GTE). No embedding infrastructure to manage.
 

@@ -251,6 +251,8 @@ class Index:
         include_metadata: bool = False,
         include_vectors: bool = False,
         dynamic_hybrid: bool = False,
+        agentic_search: bool = False,
+        return_hops: bool = False,
     ) -> QueryResponse:
         """
         Query the index.
@@ -280,6 +282,21 @@ class Index:
                 returns the ranking directly — no ``alpha`` to tune, no
                 client-side fusion. Only valid on hybrid indexes, and
                 ``top_k`` must be <= 100.
+            agentic_search: When True, runs Dasein's managed multi-hop
+                pipeline against this index instead of a single retrieval.
+                Dasein decomposes ``text`` into a chain of sub-questions,
+                runs 3–5 hops of retrieval + reading, and returns the
+                final-hop fused ranking plus a parsed natural-language
+                answer (``response.final_answer``). Requires ``text``.
+                All other retrieval kwargs (``mode``, ``alpha``,
+                ``dynamic_hybrid``, ``filter``, ``exact``, ``phrase``,
+                ``fuzzy``) apply to **every hop** — e.g. a hybrid α=0.7
+                multi-hop run uses hybrid α=0.7 on each sub-query.
+                ``include_vectors`` is not supported in agentic mode.
+            return_hops: Only meaningful with ``agentic_search=True``.
+                When True, the response carries the full per-hop trace
+                in ``response.hops`` (sub-question text, fused ids /
+                scores / metadata / texts, reader answer, timings).
 
         Returns:
             QueryResponse (iterable like a list of QueryResult, with timing attrs)
@@ -288,6 +305,21 @@ class Index:
             raise ValueError("Either text or vector must be provided")
         if dynamic_hybrid and top_k > 100:
             raise ValueError("dynamic_hybrid requires top_k <= 100")
+        if agentic_search:
+            return self._agentic_query(
+                text=text,
+                vector=vector,
+                top_k=top_k,
+                mode=mode,
+                filter=filter,
+                exact=exact,
+                phrase=phrase,
+                fuzzy=fuzzy,
+                alpha=alpha,
+                dynamic_hybrid=dynamic_hybrid,
+                include_vectors=include_vectors,
+                return_hops=return_hops,
+            )
 
         payload: dict[str, Any] = {"top_k": top_k, "mode": mode}
         if text is not None:
@@ -352,6 +384,101 @@ class Index:
             rate_us=int(h.get("x-rate-us", 0)),
             route_us=int(h.get("x-route-us", 0)),
             resp_us=int(h.get("x-resp-us", 0)),
+        )
+
+    def _agentic_query(
+        self,
+        *,
+        text: str | None,
+        vector: list[float] | None,
+        top_k: int,
+        mode: str,
+        filter: dict[str, Any] | None,
+        exact: bool,
+        phrase: bool,
+        fuzzy: bool,
+        alpha: float,
+        dynamic_hybrid: bool,
+        include_vectors: bool,
+        return_hops: bool,
+    ) -> QueryResponse:
+        """Internal: run a managed multi-hop search and shape the final
+        hop into a QueryResponse. See ``Index.query(agentic_search=True)``
+        for the public API. Honors all per-query retrieval kwargs by
+        forwarding them as the *per-hop* retrieval config server-side.
+        """
+        if not text:
+            raise ValueError(
+                "agentic_search=True requires `text` (a natural-language "
+                "question). Vector-only queries cannot be decomposed into "
+                "sub-questions."
+            )
+        if vector is not None:
+            raise ValueError(
+                "agentic_search=True is text-only — pass `text=...` and "
+                "omit `vector`."
+            )
+        if include_vectors:
+            raise ValueError(
+                "agentic_search=True does not return vectors. Drop "
+                "include_vectors or run a single-hop query()."
+            )
+        if mode not in ("dense", "hybrid", "bm25"):
+            raise ValueError(
+                f"agentic_search: mode must be dense|hybrid|bm25, got {mode!r}"
+            )
+        if dynamic_hybrid and top_k > 100:
+            raise ValueError("dynamic_hybrid requires top_k <= 100")
+
+        payload: dict[str, Any] = {
+            "question": text,
+            "top_k": top_k,
+            "verbose": bool(return_hops),
+            "mode": mode,
+            "alpha": alpha,
+            "dynamic_hybrid": bool(dynamic_hybrid),
+            "exact": bool(exact),
+            "phrase": bool(phrase),
+            "fuzzy": bool(fuzzy),
+        }
+        if filter is not None:
+            payload["filter"] = filter
+
+        t0 = time.perf_counter()
+        resp = self._client._request(
+            "POST",
+            f"/indexes/{self.index_id}/multihop/query",
+            json=payload,
+            timeout=180.0,
+        )
+        round_trip_ms = (time.perf_counter() - t0) * 1000
+        data = _resp_json(resp)
+
+        hops = data.get("hops") or []
+        last_hop: dict[str, Any] = hops[-1] if hops else {}
+        ids = last_hop.get("fused_ids") or []
+        scores = last_hop.get("fused_scores") or []
+        texts = last_hop.get("fused_texts") or {}
+        metadata = last_hop.get("fused_metadata") or {}
+
+        n = min(len(ids), top_k)
+        results: list[QueryResult] = []
+        for i in range(n):
+            did = ids[i]
+            sd = float(scores[i]) if i < len(scores) else 0.0
+            t = texts.get(did) if isinstance(texts, dict) else None
+            m = metadata.get(did) if isinstance(metadata, dict) else None
+            results.append(QueryResult(
+                id=did, score=sd, text=t, metadata=m, vector=None,
+            ))
+
+        return QueryResponse(
+            results=results,
+            round_trip_ms=round_trip_ms,
+            final_answer=data.get("final_answer"),
+            chain=list(data.get("chain") or []) or None,
+            n_hops=int(data.get("n_hops") or len(hops) or 0) or None,
+            hops=hops if return_hops else None,
         )
 
     def query_batch(

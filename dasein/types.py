@@ -36,6 +36,13 @@ class QueryResponse:
 
     Behaves like a list of QueryResult for backward compatibility —
     you can iterate, index, and len() it directly.
+
+    When the call was an ``agentic_search`` query (multi-hop), the
+    multi-hop fields below are populated. ``results`` holds the final
+    fused ranking from the last hop; ``final_answer`` is the reader's
+    parsed answer to the original question; ``chain`` and ``hops``
+    expose intermediate sub-questions and per-hop hits when the caller
+    passed ``return_hops=True``.
     """
     results: list[QueryResult]
     round_trip_ms: float = 0.0
@@ -51,6 +58,11 @@ class QueryResponse:
     # Per-slot failures do NOT raise — the caller iterates and inspects
     # `error` to decide whether to retry that slot.
     error: str | None = None
+    # Multi-hop / agentic_search fields. None on a single-hop query.
+    final_answer: str | None = None
+    chain: list[str] | None = None
+    n_hops: int | None = None
+    hops: list[dict[str, Any]] | None = None
 
     def __iter__(self):
         return iter(self.results)
